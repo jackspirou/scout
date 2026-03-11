@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build release
+        run: swift build -c release
+
+      - name: Create .app bundle
+        run: |
+          mkdir -p Scout.app/Contents/MacOS
+          mkdir -p Scout.app/Contents/Resources
+          cp .build/release/Scout Scout.app/Contents/MacOS/
+          cp Sources/Scout/Resources/Info.plist Scout.app/Contents/
+          chmod +x Scout.app/Contents/MacOS/Scout
+
+      - name: Create DMG
+        run: |
+          mkdir -p dmg_contents
+          cp -R Scout.app dmg_contents/
+          ln -s /Applications dmg_contents/Applications
+          hdiutil create -volname "Scout" -srcfolder dmg_contents -ov -format UDZO Scout.dmg
+
+      - name: Create zip
+        run: ditto -c -k --sequesterRsrc --keepParent Scout.app Scout.app.zip
+
+      - name: Determine prerelease
+        id: prerelease
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" == *-alpha* ]] || [[ "$TAG" == *-beta* ]] || [[ "$TAG" == *-rc* ]]; then
+            echo "flag=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "flag=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ steps.prerelease.outputs.flag == 'true' }}
+          files: |
+            Scout.dmg
+            Scout.app.zip
