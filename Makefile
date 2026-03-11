@@ -17,8 +17,8 @@ APP_BUNDLE     := $(BUILD_DIR)/$(APP_NAME).app
 APP_CONTENTS   := $(APP_BUNDLE)/Contents
 APP_MACOS      := $(APP_CONTENTS)/MacOS
 APP_RESOURCES  := $(APP_CONTENTS)/Resources
-RELEASE_BIN    := .build/release/$(APP_NAME)
-DEBUG_BIN      := .build/debug/$(APP_NAME)
+RELEASE_BIN    := $(shell swift build -c release --show-bin-path 2>/dev/null)/$(APP_NAME)
+DEBUG_BIN      := $(shell swift build --show-bin-path 2>/dev/null)/$(APP_NAME)
 DMG_FILE       := $(BUILD_DIR)/$(APP_NAME).dmg
 
 # ------------------------------------------------------------------
@@ -51,19 +51,26 @@ app: release
 	# Copy the release binary
 	@cp "$(RELEASE_BIN)" "$(APP_MACOS)/$(APP_NAME)"
 
-	# Copy Info.plist into Contents/
+	# Copy Info.plist into Contents/ and create PkgInfo
 	@cp "$(INFO_PLIST)" "$(APP_CONTENTS)/Info.plist"
+	@printf 'APPL????' > "$(APP_CONTENTS)/PkgInfo"
 
 	# Copy entitlements into Resources/
 	@cp "$(ENTITLEMENTS)" "$(APP_RESOURCES)/$(APP_NAME).entitlements"
 
-	# Generate .icns from .iconset if both iconutil and the source exist
-	@if command -v iconutil >/dev/null 2>&1 && [ -d "$(ICONSET_DIR)" ]; then \
-		echo "==> Generating AppIcon.icns from $(ICONSET_DIR)"; \
-		iconutil -c icns "$(ICONSET_DIR)" -o "$(APP_RESOURCES)/AppIcon.icns"; \
-	else \
-		echo "==> Skipping icon generation (iconutil or $(ICONSET_DIR) not found)"; \
-	fi
+	# Compile Asset Catalog with actool (produces Assets.car with squircle-masked icon)
+	@echo "==> Compiling Asset Catalog"
+	@/Applications/Xcode.app/Contents/Developer/usr/bin/actool \
+		Sources/Scout/Resources/Assets.xcassets \
+		--compile "$(APP_RESOURCES)" \
+		--platform macosx \
+		--minimum-deployment-target 14.0 \
+		--app-icon AppIcon \
+		--output-partial-info-plist /dev/null 2>/dev/null
+
+	# Ad-hoc code sign the bundle (seals Resources + binds Info.plist)
+	@echo "==> Code signing $(APP_BUNDLE)"
+	@codesign --force --deep --sign - "$(APP_BUNDLE)"
 
 	@echo "==> $(APP_BUNDLE) is ready"
 

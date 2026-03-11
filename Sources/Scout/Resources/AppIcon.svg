@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4A90D9"/>
+      <stop offset="100%" stop-color="#2C5F8A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="32" y="32" width="960" height="960" rx="215" ry="215" fill="url(#bg)"/>
+  <rect x="48" y="48" width="928" height="928" rx="200" ry="200" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="3"/>
+
+  <!--
+    Dog head outline from front view:
+    - Two tall pointy ears, wide apart
+    - Top of skull curve between ears
+    - Sides of head curving down to cheeks
+    - Two dot eyes
+    - Small tongue poking out at bottom center
+  -->
+  <g transform="translate(512, 480)" fill="none" stroke="white" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- Full head outline as one continuous path:
+         Start bottom-left cheek, up left side, up left ear to tip,
+         down inner left ear, across skull, down inner right ear,
+         up right ear to tip, down right side, to bottom-right cheek -->
+    <path d="
+      M -200,200
+      C -230,140 -270,20 -260,-80
+      C -250,-150 -225,-220 -175,-290
+      C -165,-305 -155,-315 -148,-320
+      C -140,-280 -128,-230 -112,-180
+      C -95,-125 -72,-80 -40,-45
+      C -15,-20 15,-20 40,-45
+      C 72,-80 95,-125 112,-180
+      C 128,-230 140,-280 148,-320
+      C 155,-315 165,-305 175,-290
+      C 225,-220 250,-150 260,-80
+      C 270,20 230,140 200,200
+    "/>
+
+    <!-- Bottom of face / jaw line connecting the cheeks -->
+    <path d="
+      M -200,200
+      C -160,250 -100,280 0,280
+      C 100,280 160,250 200,200
+    "/>
+
+    <!-- Eyes - solid white dots -->
+    <circle cx="-80" cy="50" r="22" fill="white" stroke="none"/>
+    <circle cx="80" cy="50" r="22" fill="white" stroke="none"/>
+
+    <!-- Eye pupils -->
+    <circle cx="-80" cy="50" r="10" fill="#2C5F8A" stroke="none"/>
+    <circle cx="80" cy="50" r="10" fill="#2C5F8A" stroke="none"/>
+
+    <!-- Nose -->
+    <ellipse cx="0" cy="150" rx="18" ry="12" fill="white" fill-opacity="0.9" stroke="none"/>
+
+    <!-- Tongue sticking out -->
+    <path d="
+      M -15,200
+      C -15,200 -20,245 -12,270
+      C -5,290 5,290 12,270
+      C 20,245 15,200 15,200
+    " fill="#E8747C" stroke="#E8747C" stroke-width="4"/>
+
+    <!-- Tongue center line -->
+    <line x1="0" y1="205" x2="0" y2="265" stroke="#D05A63" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>
