@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-03-11
+
+### Added
+- App icon (bulldog) with pre-rendered macOS squircle mask at all standard sizes
+- Asset catalog (Assets.xcassets) with complete icon set
+- PkgInfo file generation for proper bundle identification
+- actool asset catalog compilation in build pipeline
+- Ad-hoc code signing in build pipeline
+- GUI activation policy so app appears in Dock properly
+
+### Fixed
+- SPM binary path resolution in Makefile (uses `swift build --show-bin-path`)
+- Release workflow now matches local build (actool, codesign, PkgInfo)
+
+## [0.1.0-alpha.1] - 2026-03-11
+
 ### Added
 - Initial project scaffolding with Swift Package Manager
 - Dual-pane file browser with split view layout
