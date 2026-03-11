@@ -4,7 +4,7 @@ import Observation
 // MARK: - TransferType
 
 /// The kind of file transfer operation.
-enum TransferType: String, Codable, Sendable {
+enum TransferType: String, Codable {
     case copy
     case move
     case trash
@@ -13,7 +13,7 @@ enum TransferType: String, Codable, Sendable {
 // MARK: - TransferStatus
 
 /// Lifecycle state of a transfer operation.
-enum TransferStatus: String, Sendable {
+enum TransferStatus: String {
     case pending
     case inProgress
     case paused
@@ -29,7 +29,7 @@ enum TransferStatus: String, Sendable {
 // MARK: - ConflictResolution
 
 /// Strategy for resolving naming conflicts at the destination.
-enum ConflictResolution: Sendable {
+enum ConflictResolution {
     case replace
     case skip
     case keepBoth
@@ -44,7 +44,6 @@ enum ConflictResolution: Sendable {
 /// Observable model tracking a file copy or move operation.
 @Observable
 final class TransferOperation: Identifiable, @unchecked Sendable {
-
     // MARK: - Identity
 
     nonisolated let id: UUID
@@ -71,10 +70,14 @@ final class TransferOperation: Identifiable, @unchecked Sendable {
     @MainActor var error: String?
 
     /// Backward-compatible alias for code using `sources`.
-    var sources: [URL] { sourceURLs }
+    var sources: [URL] {
+        sourceURLs
+    }
 
     /// Backward-compatible alias for code using `destination`.
-    var destination: URL { destinationURL }
+    var destination: URL {
+        destinationURL
+    }
 
     // MARK: - Initializer
 
@@ -91,13 +94,13 @@ final class TransferOperation: Identifiable, @unchecked Sendable {
         self.destinationURL = destinationURL
         self.type = type
         self.createdAt = createdAt
-        self.progress = Progress(totalUnitCount: 0)
-        self.status = .pending
-        self.currentFile = ""
-        self.bytesTransferred = 0
-        self.totalBytes = 0
-        self.speed = 0
-        self.error = nil
+        progress = Progress(totalUnitCount: 0)
+        status = .pending
+        currentFile = ""
+        bytesTransferred = 0
+        totalBytes = 0
+        speed = 0
+        error = nil
     }
 
     /// Backward-compatible initializer matching old `sources` / `destination` parameter names.

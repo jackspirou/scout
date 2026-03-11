@@ -3,7 +3,7 @@ import Foundation
 // MARK: - PaneState
 
 /// Snapshot of a single pane's navigation and display state.
-struct PaneState: Codable, Equatable, Sendable {
+struct PaneState: Codable, Equatable {
     var path: URL
     var viewSettings: ViewSettings
     var scrollPosition: CGFloat
@@ -22,7 +22,7 @@ struct PaneState: Codable, Equatable, Sendable {
 // MARK: - TabState
 
 /// A single tab within a pane, including its navigation state and metadata.
-struct TabState: Codable, Equatable, Sendable {
+struct TabState: Codable, Equatable {
     var paneState: PaneState
     var title: String
     var isPinned: Bool
@@ -40,7 +40,7 @@ struct TabState: Codable, Equatable, Sendable {
 // MARK: - WindowFrame
 
 /// Serializable representation of a window's on-screen frame.
-struct WindowFrame: Codable, Equatable, Sendable {
+struct WindowFrame: Codable, Equatable {
     let x: Double
     let y: Double
     let width: Double
@@ -50,7 +50,7 @@ struct WindowFrame: Codable, Equatable, Sendable {
 // MARK: - WindowState
 
 /// The full state of a single window, including tabs for both panes.
-struct WindowState: Codable, Equatable, Sendable {
+struct WindowState: Codable, Equatable {
     var leftTabs: [TabState]
     var rightTabs: [TabState]
     var activeLeftTab: Int
@@ -95,7 +95,7 @@ struct WindowState: Codable, Equatable, Sendable {
 // MARK: - Workspace
 
 /// A named, persistable workspace that captures the complete window layout.
-struct Workspace: Codable, Identifiable, Equatable, Sendable {
+struct Workspace: Codable, Identifiable, Equatable {
     let id: UUID
     var name: String
     var windowState: WindowState
@@ -146,7 +146,7 @@ struct Workspace: Codable, Identifiable, Equatable, Sendable {
 // MARK: - BatchRenamePattern
 
 /// Defines a pattern for batch renaming operations.
-enum BatchRenamePattern: Sendable {
+enum BatchRenamePattern {
     case regex(pattern: String, replacement: String)
     case sequential(prefix: String, startNumber: Int, zeroPadding: Int, suffix: String)
     case findReplace(find: String, replace: String, caseSensitive: Bool)

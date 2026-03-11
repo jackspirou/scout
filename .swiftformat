@@ -1,0 +1,5 @@
+--swiftversion 5
+--indent 4
+--self remove
+--stripunusedargs closure-only
+--maxwidth 120

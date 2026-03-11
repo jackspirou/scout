@@ -3,7 +3,6 @@ import UniformTypeIdentifiers
 
 /// Represents a single file system item with its metadata.
 struct FileItem: Identifiable, Hashable {
-
     // MARK: - Properties
 
     let url: URL
@@ -25,7 +24,9 @@ struct FileItem: Identifiable, Hashable {
 
     // MARK: - Identifiable
 
-    var id: URL { url }
+    var id: URL {
+        url
+    }
 
     // MARK: - Computed Properties
 
@@ -81,37 +82,6 @@ struct FileItem: Identifiable, Hashable {
         self.kind = kind ?? (isDirectory ? "Folder" : "Document")
         self.icon = icon ?? NSWorkspace.shared.icon(forFile: url.path)
         self.contentType = contentType
-        self.tags = tags
-        self.permissions = permissions
-    }
-
-    /// Backward-compatible initializer matching FileSystemService usage with `fileSize` parameter name.
-    init(
-        url: URL,
-        name: String,
-        isDirectory: Bool,
-        isHidden: Bool = false,
-        isSymlink: Bool = false,
-        isPackage: Bool = false,
-        fileSize: Int64,
-        modificationDate: Date = Date(),
-        creationDate: Date = Date(),
-        contentType: String? = nil,
-        tags: [String] = [],
-        permissions: UInt16 = 0o644
-    ) {
-        self.url = url
-        self.name = name
-        self.isDirectory = isDirectory
-        self.isHidden = isHidden
-        self.isSymlink = isSymlink
-        self.isPackage = isPackage
-        self.size = fileSize
-        self.modificationDate = modificationDate
-        self.creationDate = creationDate
-        self.contentType = contentType
-        self.kind = contentType ?? (isDirectory ? "Folder" : "Document")
-        self.icon = NSWorkspace.shared.icon(forFile: url.path)
         self.tags = tags
         self.permissions = permissions
     }
@@ -188,6 +158,29 @@ struct FileItem: Identifiable, Hashable {
             contentType: resourceValues.contentType?.identifier,
             tags: resourceValues.tagNames ?? []
         )
+    }
+
+    // MARK: - Sorting
+
+    /// Compares two FileItems by the given sort field. Directories always sort before files.
+    /// Returns true if `lhs` should appear before `rhs` in ascending order.
+    static func compare(_ lhs: FileItem, _ rhs: FileItem, by field: SortField) -> Bool {
+        if lhs.isDirectory != rhs.isDirectory {
+            return lhs.isDirectory
+        }
+
+        switch field {
+        case .name:
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        case .size:
+            return (lhs.size ?? 0) < (rhs.size ?? 0)
+        case .dateModified:
+            return lhs.dateModified < rhs.dateModified
+        case .dateCreated:
+            return (lhs.creationDate ?? .distantPast) < (rhs.creationDate ?? .distantPast)
+        case .kind:
+            return lhs.kind.localizedStandardCompare(rhs.kind) == .orderedAscending
+        }
     }
 
     // MARK: - Private

@@ -11,18 +11,17 @@ struct BrowserTabState {
     var forwardStack: [URL]
 
     init(url: URL) {
-        self.id = UUID()
+        id = UUID()
         self.url = url
-        self.title = url.lastPathComponent
-        self.backStack = []
-        self.forwardStack = []
+        title = url.lastPathComponent
+        backStack = []
+        forwardStack = []
     }
 }
 
 // MARK: - BrowserPaneViewController
 
 final class BrowserPaneViewController: NSViewController {
-
     // MARK: - Properties
 
     private var tabs: [BrowserTabState] = []
@@ -31,11 +30,38 @@ final class BrowserPaneViewController: NSViewController {
 
     private let tabBar = NSStackView()
     private let pathBarView = PathBarView()
-    private let fileListViewController = FileListViewController()
+    private let fileListViewController: FileListViewController
     private let statusBar = NSTextField(labelWithString: "0 items")
+    private let directoryMonitor = DirectoryMonitor()
+
+    // MARK: - Init
+
+    init(clipboardManager: ClipboardManager) {
+        fileListViewController = FileListViewController(clipboardManager: clipboardManager)
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    private var tabBarHeightConstraint: NSLayoutConstraint?
+
+    /// A thin accent-colored bar pinned to the top edge that indicates the active pane.
+    private lazy var activeIndicatorBar: NSView = {
+        let bar = NSView()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        bar.wantsLayer = true
+        bar.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.3).cgColor
+        bar.isHidden = true
+        return bar
+    }()
 
     /// The number of open tabs.
-    var tabCount: Int { tabs.count }
+    var tabCount: Int {
+        tabs.count
+    }
 
     // MARK: - Constants
 
@@ -43,6 +69,7 @@ final class BrowserPaneViewController: NSViewController {
         static let tabBarHeight: CGFloat = 28
         static let statusBarHeight: CGFloat = 22
         static let pathBarHeight: CGFloat = 30
+        static let activeIndicatorHeight: CGFloat = 2
     }
 
     // MARK: - Lifecycle
@@ -55,6 +82,7 @@ final class BrowserPaneViewController: NSViewController {
         configurePathBar()
         configureFileList()
         configureStatusBar()
+        configureActiveIndicator()
         layoutSubviews()
     }
 
@@ -67,6 +95,7 @@ final class BrowserPaneViewController: NSViewController {
 
         pathBarView.delegate = self
         fileListViewController.delegate = self
+        directoryMonitor.delegate = self
     }
 
     // MARK: - Configuration
@@ -77,7 +106,6 @@ final class BrowserPaneViewController: NSViewController {
         tabBar.spacing = 1
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         tabBar.wantsLayer = true
-        tabBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         view.addSubview(tabBar)
     }
 
@@ -104,13 +132,20 @@ final class BrowserPaneViewController: NSViewController {
         view.addSubview(statusBar)
     }
 
+    private func configureActiveIndicator() {
+        view.addSubview(activeIndicatorBar)
+    }
+
     private func layoutSubviews() {
+        let heightConstraint = tabBar.heightAnchor.constraint(equalToConstant: 0)
+        tabBarHeightConstraint = heightConstraint
+
         NSLayoutConstraint.activate([
-            // Tab bar at the very top
+            // Tab bar at the very top (hidden by default for single tab)
             tabBar.topAnchor.constraint(equalTo: view.topAnchor),
             tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabBar.heightAnchor.constraint(equalToConstant: Layout.tabBarHeight),
+            heightConstraint,
 
             // Path bar below tab bar
             pathBarView.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
@@ -129,6 +164,12 @@ final class BrowserPaneViewController: NSViewController {
             statusBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
             statusBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             statusBar.heightAnchor.constraint(equalToConstant: Layout.statusBarHeight),
+
+            // Active-pane indicator pinned to top edge
+            activeIndicatorBar.topAnchor.constraint(equalTo: view.topAnchor),
+            activeIndicatorBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            activeIndicatorBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            activeIndicatorBar.heightAnchor.constraint(equalToConstant: Layout.activeIndicatorHeight),
         ])
     }
 
@@ -219,14 +260,7 @@ final class BrowserPaneViewController: NSViewController {
     /// Sets the active/focused visual state of this pane.
     func setActive(_ active: Bool) {
         isActive = active
-        view.wantsLayer = true
-        if active {
-            view.layer?.borderWidth = 2
-            view.layer?.borderColor = NSColor.controlAccentColor.cgColor
-        } else {
-            view.layer?.borderWidth = 0
-            view.layer?.borderColor = nil
-        }
+        activeIndicatorBar.isHidden = !active
     }
 
     // MARK: - Keyboard Navigation
@@ -237,6 +271,10 @@ final class BrowserPaneViewController: NSViewController {
         switch event.keyCode {
         case 36: // Return/Enter - open selected item
             fileListViewController.openSelectedItem()
+        case 120 where flags.isEmpty: // F2 - rename
+            fileListViewController.renameSelection(nil)
+        case 49 where flags.isEmpty: // Space - Quick Look
+            fileListViewController.toggleQuickLook()
         case 126 where flags.contains(.command): // Cmd+Up - parent directory
             goToParent()
         case 51: // Backspace/Delete - go back
@@ -250,6 +288,14 @@ final class BrowserPaneViewController: NSViewController {
 
     private func rebuildTabBar() {
         tabBar.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        // Hide the tab bar when there's only one tab
+        let singleTab = tabs.count <= 1
+        tabBar.isHidden = singleTab
+        tabBarHeightConstraint?.constant = singleTab ? 0 : Layout.tabBarHeight
+        tabBar.layer?.backgroundColor = singleTab ? nil : NSColor.windowBackgroundColor.cgColor
+
+        guard !singleTab else { return }
 
         for (index, tab) in tabs.enumerated() {
             let button = makeTabButton(title: tab.title, index: index, isSelected: index == activeTabIndex)
@@ -319,6 +365,7 @@ final class BrowserPaneViewController: NSViewController {
         let url = tabs[activeTabIndex].url
         pathBarView.update(with: url)
         fileListViewController.loadDirectory(at: url)
+        // Directory monitoring starts in fileListViewDidFinishLoading once items are loaded.
     }
 
     private func updateStatusBar(itemCount: Int, selectedCount: Int) {
@@ -333,7 +380,6 @@ final class BrowserPaneViewController: NSViewController {
 // MARK: - PathBarDelegate
 
 extension BrowserPaneViewController: PathBarDelegate {
-
     func pathBar(_ pathBar: PathBarView, didNavigateTo url: URL) {
         navigateTo(url: url)
     }
@@ -346,7 +392,6 @@ extension BrowserPaneViewController: PathBarDelegate {
 // MARK: - FileListViewDelegate
 
 extension BrowserPaneViewController: FileListViewDelegate {
-
     func fileListView(_ controller: FileListViewController, didSelectItems items: [FileItem]) {
         updateStatusBar(itemCount: controller.itemCount, selectedCount: items.count)
     }
@@ -365,5 +410,20 @@ extension BrowserPaneViewController: FileListViewDelegate {
 
     func fileListViewDidFinishLoading(_ controller: FileListViewController, itemCount: Int) {
         updateStatusBar(itemCount: itemCount, selectedCount: 0)
+
+        // Update the directory monitor's known paths now that loading is complete.
+        if let url = controller.currentDirectoryURL {
+            let knownPaths = Set(controller.currentItems.map { $0.url.path })
+            directoryMonitor.startMonitoring(url: url, knownPaths: knownPaths)
+        }
+    }
+}
+
+// MARK: - DirectoryMonitorDelegate
+
+extension BrowserPaneViewController: DirectoryMonitorDelegate {
+    func directoryMonitor(_ monitor: DirectoryMonitor, didObserveChanges events: [DirectoryChangeEvent]) {
+        fileListViewController.applyChanges(events)
+        updateStatusBar(itemCount: fileListViewController.itemCount, selectedCount: 0)
     }
 }

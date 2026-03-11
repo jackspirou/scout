@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - SearchScope
 
-enum SearchScope: Sendable {
+enum SearchScope {
     case currentFolder(URL)
     case subfolder(URL)
     case fullDisk
@@ -11,7 +11,7 @@ enum SearchScope: Sendable {
 
 // MARK: - SearchFilter
 
-enum SearchFilter: Sendable {
+enum SearchFilter {
     case kind(String)
     case sizeGreaterThan(Int64)
     case sizeLessThan(Int64)
@@ -30,7 +30,7 @@ enum SearchError: LocalizedError {
         switch self {
         case .invalidQuery:
             return "Invalid search query"
-        case .queryFailed(let reason):
+        case let .queryFailed(reason):
             return "Search failed: \(reason)"
         }
     }
@@ -40,10 +40,10 @@ enum SearchError: LocalizedError {
 
 /// Actor-based service for file search using Spotlight and custom fuzzy matching.
 actor SearchService {
-
     private var activeQuery: NSMetadataQuery?
+    private var activeObserver: SpotlightObserver?
     private var debounceTask: Task<Void, Never>?
-    private let debounceInterval: Duration
+    private nonisolated let debounceInterval: Duration
     private let fileSystemService: FileSystemService
 
     init(
@@ -79,7 +79,7 @@ actor SearchService {
                 }
 
                 // Apply debounce.
-                try? await Task.sleep(for: await self.debounceInterval)
+                try? await Task.sleep(for: self.debounceInterval)
 
                 guard !Task.isCancelled else {
                     continuation.finish()
@@ -113,12 +113,10 @@ actor SearchService {
             return []
         }
 
-        let normalizedQuery = query.lowercased()
-
         var scoredItems: [(FileItem, Int)] = []
 
         for item in items {
-            if let score = fuzzyScore(query: normalizedQuery, target: item.name.lowercased()) {
+            if let score = item.name.fuzzyMatchScore(query: query) {
                 scoredItems.append((item, score))
             }
         }
@@ -138,7 +136,10 @@ actor SearchService {
 
         if let query = activeQuery {
             query.stop()
-            NotificationCenter.default.removeObserver(self, name: nil, object: query)
+            if let observer = activeObserver {
+                NotificationCenter.default.removeObserver(observer, name: nil, object: query)
+                activeObserver = nil
+            }
             activeQuery = nil
         }
     }
@@ -154,17 +155,17 @@ actor SearchService {
         let metadataQuery = NSMetadataQuery()
         metadataQuery.predicate = buildPredicate(query: queryString, filters: filters)
         metadataQuery.sortDescriptors = [
-            NSSortDescriptor(key: NSMetadataItemFSNameKey, ascending: true)
+            NSSortDescriptor(key: NSMetadataItemFSNameKey, ascending: true),
         ]
 
         switch scope {
-        case .currentFolder(let url):
+        case let .currentFolder(url):
             metadataQuery.searchScopes = [url]
-        case .subfolder(let url):
+        case let .subfolder(url):
             metadataQuery.searchScopes = [url]
         case .fullDisk:
             metadataQuery.searchScopes = [
-                NSMetadataQueryLocalComputerScope
+                NSMetadataQueryLocalComputerScope,
             ]
         }
 
@@ -172,6 +173,7 @@ actor SearchService {
         metadataQuery.notificationBatchingInterval = 0.15
 
         let observer = SpotlightObserver(continuation: continuation)
+        activeObserver = observer
 
         NotificationCenter.default.addObserver(
             observer,
@@ -187,11 +189,13 @@ actor SearchService {
             object: metadataQuery
         )
 
-        self.activeQuery = metadataQuery
+        activeQuery = metadataQuery
 
         // NSMetadataQuery must run on the main run loop.
+        // Safety: metadataQuery is created here and only used on the main thread.
+        nonisolated(unsafe) let query = metadataQuery
         DispatchQueue.main.async {
-            metadataQuery.start()
+            query.start()
         }
     }
 
@@ -210,7 +214,7 @@ actor SearchService {
 
         for filter in filters {
             switch filter {
-            case .kind(let kind):
+            case let .kind(kind):
                 subpredicates.append(
                     NSPredicate(
                         format: "%K == %@",
@@ -219,7 +223,7 @@ actor SearchService {
                     )
                 )
 
-            case .sizeGreaterThan(let size):
+            case let .sizeGreaterThan(size):
                 subpredicates.append(
                     NSPredicate(
                         format: "%K > %lld",
@@ -228,7 +232,7 @@ actor SearchService {
                     )
                 )
 
-            case .sizeLessThan(let size):
+            case let .sizeLessThan(size):
                 subpredicates.append(
                     NSPredicate(
                         format: "%K < %lld",
@@ -237,7 +241,7 @@ actor SearchService {
                     )
                 )
 
-            case .modifiedAfter(let date):
+            case let .modifiedAfter(date):
                 subpredicates.append(
                     NSPredicate(
                         format: "%K > %@",
@@ -246,7 +250,7 @@ actor SearchService {
                     )
                 )
 
-            case .modifiedBefore(let date):
+            case let .modifiedBefore(date):
                 subpredicates.append(
                     NSPredicate(
                         format: "%K < %@",
@@ -255,7 +259,7 @@ actor SearchService {
                     )
                 )
 
-            case .hasTag(let tag):
+            case let .hasTag(tag):
                 subpredicates.append(
                     NSPredicate(
                         format: "%K CONTAINS %@",
@@ -267,68 +271,6 @@ actor SearchService {
         }
 
         return NSCompoundPredicate(andPredicateWithSubpredicates: subpredicates)
-    }
-
-    /// Computes a fuzzy match score. Returns nil if no match.
-    /// Higher scores indicate better matches.
-    private func fuzzyScore(query: String, target: String) -> Int? {
-        guard !query.isEmpty else { return nil }
-
-        var score = 0
-        var queryIndex = query.startIndex
-        var targetIndex = target.startIndex
-        var previousMatchIndex: String.Index?
-
-        while queryIndex < query.endIndex, targetIndex < target.endIndex {
-            let queryChar = query[queryIndex]
-            let targetChar = target[targetIndex]
-
-            if queryChar == targetChar {
-                score += 1
-
-                // Bonus for consecutive matches.
-                if let prevIdx = previousMatchIndex,
-                    target.index(after: prevIdx) == targetIndex
-                {
-                    score += 5
-                }
-
-                // Bonus for matching at word boundaries.
-                if targetIndex == target.startIndex {
-                    score += 10
-                } else {
-                    let prevTargetIndex = target.index(before: targetIndex)
-                    let prevChar = target[prevTargetIndex]
-                    if prevChar == " " || prevChar == "." || prevChar == "-" || prevChar == "_" {
-                        score += 8
-                    }
-                }
-
-                // Bonus for matching uppercase in camelCase.
-                if targetChar.isUppercase {
-                    score += 3
-                }
-
-                previousMatchIndex = targetIndex
-                queryIndex = query.index(after: queryIndex)
-            }
-
-            targetIndex = target.index(after: targetIndex)
-        }
-
-        // All query characters must be matched.
-        guard queryIndex == query.endIndex else { return nil }
-
-        // Bonus for shorter targets (more specific match).
-        let lengthDifference = target.count - query.count
-        score -= lengthDifference
-
-        // Bonus for prefix match.
-        if target.hasPrefix(query) {
-            score += 15
-        }
-
-        return score
     }
 }
 
@@ -370,7 +312,7 @@ private final class SpotlightObserver: NSObject, @unchecked Sendable {
         var items: [FileItem] = []
         items.reserveCapacity(query.resultCount)
 
-        for i in 0..<query.resultCount {
+        for i in 0 ..< query.resultCount {
             guard let result = query.result(at: i) as? NSMetadataItem else { continue }
 
             guard let path = result.value(forAttribute: NSMetadataItemPathKey) as? String else {

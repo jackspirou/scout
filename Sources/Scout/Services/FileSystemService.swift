@@ -15,21 +15,21 @@ enum FileSystemError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .directoryNotFound(let url):
+        case let .directoryNotFound(url):
             return "Directory not found: \(url.path)"
-        case .fileNotFound(let url):
+        case let .fileNotFound(url):
             return "File not found: \(url.path)"
-        case .permissionDenied(let url):
+        case let .permissionDenied(url):
             return "Permission denied: \(url.path)"
-        case .itemAlreadyExists(let url):
+        case let .itemAlreadyExists(url):
             return "Item already exists: \(url.path)"
-        case .invalidName(let name):
+        case let .invalidName(name):
             return "Invalid name: \(name)"
-        case .renameFailed(let url, let newName):
+        case let .renameFailed(url, newName):
             return "Failed to rename \(url.lastPathComponent) to \(newName)"
-        case .batchRenameFailed(let reason):
+        case let .batchRenameFailed(reason):
             return "Batch rename failed: \(reason)"
-        case .operationFailed(let reason):
+        case let .operationFailed(reason):
             return "Operation failed: \(reason)"
         }
     }
@@ -40,7 +40,6 @@ enum FileSystemError: LocalizedError {
 /// Actor-based service for file system operations.
 /// Uses FileManager and POSIX APIs for performance-sensitive paths.
 actor FileSystemService {
-
     private let fileManager: FileManager
 
     init(fileManager: FileManager = .default) {
@@ -99,7 +98,7 @@ actor FileSystemService {
         }
 
         items.sort { lhs, rhs in
-            let result = compareItems(lhs, rhs, by: sortField)
+            let result = FileItem.compare(lhs, rhs, by: sortField)
             return order == .ascending ? result : !result
         }
 
@@ -116,7 +115,8 @@ actor FileSystemService {
 
         guard let item = FileItem.create(from: url) else {
             throw FileSystemError.operationFailed(
-                "Failed to read attributes for \(url.path)")
+                "Failed to read attributes for \(url.path)"
+            )
         }
 
         return item
@@ -148,7 +148,8 @@ actor FileSystemService {
             )
         } catch {
             throw FileSystemError.operationFailed(
-                "Failed to create directory '\(name)': \(error.localizedDescription)")
+                "Failed to create directory '\(name)': \(error.localizedDescription)"
+            )
         }
 
         return newDirectoryURL
@@ -176,7 +177,8 @@ actor FileSystemService {
                     throw FileSystemError.itemAlreadyExists(destinationURL)
                 }
                 throw FileSystemError.operationFailed(
-                    "Failed to move \(sourceURL.lastPathComponent): \(error.localizedDescription)")
+                    "Failed to move \(sourceURL.lastPathComponent): \(error.localizedDescription)"
+                )
             }
         }
     }
@@ -203,7 +205,8 @@ actor FileSystemService {
                     throw FileSystemError.itemAlreadyExists(destinationURL)
                 }
                 throw FileSystemError.operationFailed(
-                    "Failed to copy \(sourceURL.lastPathComponent): \(error.localizedDescription)")
+                    "Failed to copy \(sourceURL.lastPathComponent): \(error.localizedDescription)"
+                )
             }
         }
     }
@@ -228,7 +231,8 @@ actor FileSystemService {
                 }
             } catch {
                 throw FileSystemError.operationFailed(
-                    "Failed to trash \(url.lastPathComponent): \(error.localizedDescription)")
+                    "Failed to trash \(url.lastPathComponent): \(error.localizedDescription)"
+                )
             }
         }
 
@@ -278,7 +282,7 @@ actor FileSystemService {
         renamedURLs.reserveCapacity(urls.count)
 
         switch pattern {
-        case .regex(let regexPattern, let replacement):
+        case let .regex(regexPattern, replacement):
             guard let regex = try? NSRegularExpression(pattern: regexPattern) else {
                 throw FileSystemError.batchRenameFailed("Invalid regex pattern: \(regexPattern)")
             }
@@ -297,7 +301,7 @@ actor FileSystemService {
                 renamedURLs.append(newURL)
             }
 
-        case .sequential(let prefix, let startNumber, let zeroPadding, let suffix):
+        case let .sequential(prefix, startNumber, zeroPadding, suffix):
             for (index, url) in urls.enumerated() {
                 let number = startNumber + index
                 let paddedNumber = String(format: "%0\(zeroPadding)d", number)
@@ -308,7 +312,7 @@ actor FileSystemService {
                 renamedURLs.append(newURL)
             }
 
-        case .findReplace(let find, let replace, let caseSensitive):
+        case let .findReplace(find, replace, caseSensitive):
             for url in urls {
                 let originalName = url.lastPathComponent
                 let options: String.CompareOptions = caseSensitive ? [] : .caseInsensitive
@@ -325,14 +329,14 @@ actor FileSystemService {
                 }
             }
 
-        case .datePrefix(let format):
+        case let .datePrefix(format):
             let formatter = DateFormatter()
             formatter.dateFormat = format
 
             for url in urls {
                 let originalName = url.lastPathComponent
                 let resourceValues = try url.resourceValues(forKeys: [
-                    .contentModificationDateKey
+                    .contentModificationDateKey,
                 ])
                 let date = resourceValues.contentModificationDate ?? Date()
                 let dateString = formatter.string(from: date)
@@ -371,25 +375,5 @@ actor FileSystemService {
             isDirectory: isDir.boolValue,
             isHidden: name.hasPrefix(".")
         )
-    }
-
-    private func compareItems(_ lhs: FileItem, _ rhs: FileItem, by field: SortField) -> Bool {
-        // Always sort directories before files.
-        if lhs.isDirectory != rhs.isDirectory {
-            return lhs.isDirectory
-        }
-
-        switch field {
-        case .name:
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-        case .size:
-            return lhs.fileSize < rhs.fileSize
-        case .dateModified:
-            return lhs.dateModified < rhs.dateModified
-        case .dateCreated:
-            return (lhs.creationDate ?? .distantPast) < (rhs.creationDate ?? .distantPast)
-        case .kind:
-            return lhs.kind.localizedStandardCompare(rhs.kind) == .orderedAscending
-        }
     }
 }

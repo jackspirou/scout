@@ -13,7 +13,6 @@ struct PaletteAction {
 // MARK: - CommandPaletteWindowController
 
 final class CommandPaletteWindowController: NSWindowController {
-
     // MARK: - Properties
 
     private let searchField = NSTextField()
@@ -44,8 +43,8 @@ final class CommandPaletteWindowController: NSWindowController {
     convenience init(actions: [PaletteAction]) {
         let panel = Self.makePanel()
         self.init(window: panel)
-        self.allActions = actions
-        self.filteredActions = actions
+        allActions = actions
+        filteredActions = actions
         configureContent()
     }
 
@@ -213,10 +212,9 @@ final class CommandPaletteWindowController: NSWindowController {
         if query.isEmpty {
             filteredActions = allActions
         } else {
-            let lowered = query.lowercased()
             filteredActions = allActions
                 .map { action -> (PaletteAction, Int) in
-                    let score = fuzzyScore(query: lowered, target: action.name.lowercased())
+                    let score = action.name.fuzzyMatchScore(query: query) ?? 0
                     return (action, score)
                 }
                 .filter { $0.1 > 0 }
@@ -231,39 +229,6 @@ final class CommandPaletteWindowController: NSWindowController {
         if !filteredActions.isEmpty {
             resultsTableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
         }
-    }
-
-    /// Simple fuzzy matching that scores based on sequential character matches.
-    private func fuzzyScore(query: String, target: String) -> Int {
-        var score = 0
-        var targetIndex = target.startIndex
-        var previousMatched = false
-
-        for queryChar in query {
-            var found = false
-            while targetIndex < target.endIndex {
-                let targetChar = target[targetIndex]
-                targetIndex = target.index(after: targetIndex)
-
-                if queryChar == targetChar {
-                    score += previousMatched ? 3 : 1 // Consecutive matches score higher
-                    previousMatched = true
-                    found = true
-                    break
-                } else {
-                    previousMatched = false
-                }
-            }
-
-            if !found { return 0 }
-        }
-
-        // Bonus for matching at the start
-        if target.hasPrefix(query) {
-            score += 5
-        }
-
-        return score
     }
 
     // MARK: - Panel Sizing
@@ -309,7 +274,6 @@ final class CommandPaletteWindowController: NSWindowController {
 // MARK: - NSTextFieldDelegate
 
 extension CommandPaletteWindowController: NSTextFieldDelegate {
-
     func controlTextDidChange(_ obj: Notification) {
         filterActions(query: searchField.stringValue)
     }
@@ -337,7 +301,6 @@ extension CommandPaletteWindowController: NSTextFieldDelegate {
 // MARK: - NSTableViewDataSource
 
 extension CommandPaletteWindowController: NSTableViewDataSource {
-
     func numberOfRows(in tableView: NSTableView) -> Int {
         filteredActions.count
     }
@@ -346,7 +309,6 @@ extension CommandPaletteWindowController: NSTableViewDataSource {
 // MARK: - NSTableViewDelegate
 
 extension CommandPaletteWindowController: NSTableViewDelegate {
-
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard filteredActions.indices.contains(row) else { return nil }
         let action = filteredActions[row]

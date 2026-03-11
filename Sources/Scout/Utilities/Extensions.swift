@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 // MARK: - URL Extensions
 
 extension URL {
-
     /// Returns `true` if this URL points to a directory.
     var isDirectory: Bool {
         (try? resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
@@ -42,7 +41,6 @@ extension URL {
 // MARK: - NSImage Extension
 
 extension NSImage {
-
     /// Returns the system icon for the file at the given URL.
     /// Uses NSWorkspace to get the icon that Finder would display.
     static func systemIcon(for url: URL) -> NSImage {
@@ -61,7 +59,6 @@ extension NSImage {
 // MARK: - Int64 Extension
 
 extension Int64 {
-
     /// Formats byte count into a human-readable string (e.g., "4.2 MB").
     var formattedByteCount: String {
         ByteCountFormatter.string(fromByteCount: self, countStyle: .file)
@@ -71,7 +68,6 @@ extension Int64 {
 // MARK: - Date Extension
 
 extension Date {
-
     /// Returns a relative-formatted string.
     /// - "Just now" for dates within the last minute
     /// - "Today" / "Yesterday" for recent dates
@@ -117,23 +113,22 @@ extension Date {
 // MARK: - NSEvent.ModifierFlags Extension
 
 extension NSEvent.ModifierFlags {
-
     /// Returns a readable string representation of the modifier flags.
     /// Uses standard macOS symbols.
     var readableString: String {
         var parts: [String] = []
 
         if contains(.control) {
-            parts.append("\u{2303}")  // Control symbol
+            parts.append("\u{2303}") // Control symbol
         }
         if contains(.option) {
-            parts.append("\u{2325}")  // Option symbol
+            parts.append("\u{2325}") // Option symbol
         }
         if contains(.shift) {
-            parts.append("\u{21E7}")  // Shift symbol
+            parts.append("\u{21E7}") // Shift symbol
         }
         if contains(.command) {
-            parts.append("\u{2318}")  // Command symbol
+            parts.append("\u{2318}") // Command symbol
         }
         if contains(.function) {
             parts.append("Fn")
@@ -169,7 +164,6 @@ extension NSEvent.ModifierFlags {
 // MARK: - String Extension
 
 extension String {
-
     /// Performs fuzzy matching of a query against this string.
     /// Returns `true` if all characters of the query appear in order within this string.
     func fuzzyMatch(query: String) -> Bool {
@@ -191,7 +185,7 @@ extension String {
         guard !query.isEmpty else { return nil }
 
         let normalizedQuery = query.lowercased()
-        let normalizedTarget = self.lowercased()
+        let normalizedTarget = lowercased()
 
         var score = 0
         var queryIndex = normalizedQuery.startIndex
@@ -209,7 +203,7 @@ extension String {
 
                 // Bonus for consecutive matches.
                 if let prevIdx = previousMatchIndex,
-                    normalizedTarget.index(after: prevIdx) == targetIndex
+                   normalizedTarget.index(after: prevIdx) == targetIndex
                 {
                     score += 5
                 }
@@ -227,7 +221,7 @@ extension String {
                 }
 
                 // Bonus for uppercase characters in original string (camelCase).
-                if targetIndex < self.endIndex {
+                if targetIndex < endIndex {
                     let originalChar = self[targetIndex]
                     if originalChar.isUppercase {
                         score += 3

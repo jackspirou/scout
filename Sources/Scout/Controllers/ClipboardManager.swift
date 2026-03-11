@@ -3,14 +3,14 @@ import Foundation
 
 // MARK: - ClipboardOperation
 
-enum ClipboardOperation: String, Codable, Sendable {
+enum ClipboardOperation: String, Codable {
     case cut
     case copy
 }
 
 // MARK: - ClipboardContent
 
-struct ClipboardContent: Identifiable, Sendable {
+struct ClipboardContent: Identifiable {
     let id: UUID
     let urls: [URL]
     let operation: ClipboardOperation
@@ -40,9 +40,9 @@ enum ClipboardError: LocalizedError {
         switch self {
         case .nothingToPaste:
             return "Nothing to paste"
-        case .pasteDestinationNotFound(let url):
+        case let .pasteDestinationNotFound(url):
             return "Paste destination not found: \(url.path)"
-        case .pasteFailed(let reason):
+        case let .pasteFailed(reason):
             return "Paste failed: \(reason)"
         }
     }
@@ -52,8 +52,7 @@ enum ClipboardError: LocalizedError {
 
 /// Manages file clipboard operations (cut, copy, paste) with system pasteboard integration
 /// and clipboard history.
-final class ClipboardManager: @unchecked Sendable {
-
+@MainActor final class ClipboardManager {
     // MARK: - Constants
 
     /// Custom pasteboard type for Scout's cut operation marker.
@@ -64,16 +63,15 @@ final class ClipboardManager: @unchecked Sendable {
 
     // MARK: - Properties
 
-    private let pasteboard: NSPasteboard
+    // Safety: NSPasteboard is not Sendable but this let-constant is assigned once in init.
+    private nonisolated(unsafe) let pasteboard: NSPasteboard
     private let fileSystemService: FileSystemService
-    private let lock = NSLock()
-
     private var _currentContent: ClipboardContent?
     private var _history: [ClipboardContent] = []
 
     // MARK: - Init
 
-    init(
+    nonisolated init(
         pasteboard: NSPasteboard = .general,
         fileSystemService: FileSystemService = FileSystemService()
     ) {
@@ -89,10 +87,8 @@ final class ClipboardManager: @unchecked Sendable {
 
         let content = ClipboardContent(urls: urls, operation: .cut)
 
-        lock.lock()
         _currentContent = content
         addToHistory(content)
-        lock.unlock()
 
         writeToPasteboard(urls: urls, operation: .cut)
     }
@@ -105,10 +101,8 @@ final class ClipboardManager: @unchecked Sendable {
 
         let content = ClipboardContent(urls: urls, operation: .copy)
 
-        lock.lock()
         _currentContent = content
         addToHistory(content)
-        lock.unlock()
 
         writeToPasteboard(urls: urls, operation: .copy)
     }
@@ -129,25 +123,20 @@ final class ClipboardManager: @unchecked Sendable {
         let content: ClipboardContent
 
         // Try to read from our internal state first, then fall back to pasteboard.
-        lock.lock()
         if let current = _currentContent {
             content = current
         } else if let pasteboardContent = readFromPasteboard() {
             content = pasteboardContent
         } else {
-            lock.unlock()
             throw ClipboardError.nothingToPaste
         }
-        lock.unlock()
 
         do {
             switch content.operation {
             case .cut:
                 try await fileSystemService.moveItems(from: content.urls, to: destination)
                 // After a cut+paste, clear the clipboard since files have been moved.
-                lock.lock()
                 _currentContent = nil
-                lock.unlock()
                 clearPasteboard()
 
             case .copy:
@@ -162,9 +151,6 @@ final class ClipboardManager: @unchecked Sendable {
 
     /// Returns whether there is content available to paste.
     func canPaste() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-
         if _currentContent != nil { return true }
 
         // Check system pasteboard for file URLs.
@@ -173,9 +159,6 @@ final class ClipboardManager: @unchecked Sendable {
 
     /// Returns the current clipboard content, if any.
     func currentContent() -> ClipboardContent? {
-        lock.lock()
-        defer { lock.unlock() }
-
         if let content = _currentContent {
             return content
         }
@@ -185,8 +168,6 @@ final class ClipboardManager: @unchecked Sendable {
 
     /// Returns the clipboard history (last 10 operations).
     func clipboardHistory() -> [ClipboardContent] {
-        lock.lock()
-        defer { lock.unlock() }
         return _history
     }
 
@@ -194,9 +175,7 @@ final class ClipboardManager: @unchecked Sendable {
 
     /// Clears the current clipboard content and the system pasteboard.
     func clear() {
-        lock.lock()
         _currentContent = nil
-        lock.unlock()
 
         clearPasteboard()
     }
@@ -213,8 +192,8 @@ final class ClipboardManager: @unchecked Sendable {
         // Write our custom type to indicate cut vs copy.
         let markerType: NSPasteboard.PasteboardType =
             operation == .cut
-            ? Self.scoutCutPasteboardType
-            : Self.scoutCopyPasteboardType
+                ? Self.scoutCutPasteboardType
+                : Self.scoutCopyPasteboardType
 
         pasteboard.setString(operation.rawValue, forType: markerType)
     }
@@ -245,7 +224,6 @@ final class ClipboardManager: @unchecked Sendable {
         pasteboard.clearContents()
     }
 
-    /// Must be called with lock held.
     private func addToHistory(_ content: ClipboardContent) {
         _history.insert(content, at: 0)
         if _history.count > Self.maxHistoryCount {
@@ -255,7 +233,7 @@ final class ClipboardManager: @unchecked Sendable {
 
     private func fileFilterOptions() -> [NSPasteboard.ReadingOptionKey: Any] {
         [
-            .urlReadingFileURLsOnly: true
+            .urlReadingFileURLsOnly: true,
         ]
     }
 }

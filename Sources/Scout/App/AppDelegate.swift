@@ -1,12 +1,73 @@
 import AppKit
-import Carbon.HIToolbox
+
+// MARK: - Menu Item Descriptor
+
+private struct MenuItemDescriptor {
+    let title: String
+    let action: Selector?
+    let keyEquivalent: String
+    let modifierMask: NSEvent.ModifierFlags?
+    let submenuItems: [MenuItemDescriptor]?
+    let isSeparator: Bool
+
+    static func item(
+        _ title: String,
+        action: Selector?,
+        key: String = "",
+        modifiers: NSEvent.ModifierFlags? = nil
+    ) -> MenuItemDescriptor {
+        MenuItemDescriptor(
+            title: title, action: action, keyEquivalent: key,
+            modifierMask: modifiers, submenuItems: nil, isSeparator: false
+        )
+    }
+
+    static var separator: MenuItemDescriptor {
+        MenuItemDescriptor(
+            title: "", action: nil, keyEquivalent: "",
+            modifierMask: nil, submenuItems: nil, isSeparator: true
+        )
+    }
+
+    static func submenu(_ title: String, items: [MenuItemDescriptor]) -> MenuItemDescriptor {
+        MenuItemDescriptor(
+            title: title, action: nil, keyEquivalent: "",
+            modifierMask: nil, submenuItems: items, isSeparator: false
+        )
+    }
+}
+
+private func buildNSMenuItem(from descriptor: MenuItemDescriptor) -> NSMenuItem {
+    if descriptor.isSeparator { return NSMenuItem.separator() }
+
+    let item = NSMenuItem(title: descriptor.title, action: descriptor.action, keyEquivalent: descriptor.keyEquivalent)
+    if let modifiers = descriptor.modifierMask {
+        item.keyEquivalentModifierMask = modifiers
+    }
+    if let children = descriptor.submenuItems {
+        let sub = NSMenu(title: descriptor.title)
+        for child in children {
+            sub.addItem(buildNSMenuItem(from: child))
+        }
+        item.submenu = sub
+    }
+    return item
+}
+
+private func buildMenu(title: String, items: [MenuItemDescriptor]) -> NSMenuItem {
+    let menuItem = NSMenuItem()
+    let menu = NSMenu(title: title)
+    for descriptor in items {
+        menu.addItem(buildNSMenuItem(from: descriptor))
+    }
+    menuItem.submenu = menu
+    return menuItem
+}
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-
     // MARK: - Properties
 
-    private var mainWindowController: MainWindowController?
-    private var eventTap: CFMachPort?
+    private var windowControllers: [MainWindowController] = []
 
     // MARK: - NSApplicationDelegate
 
@@ -14,8 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMainMenu()
         setupGlobalHotkey()
 
-        mainWindowController = MainWindowController()
-        mainWindowController?.showWindow(nil)
+        let controller = makeWindowController()
+        controller.showWindow(nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -24,51 +85,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            mainWindowController?.showWindow(nil)
+            if let existing = windowControllers.first {
+                existing.showWindow(nil)
+            } else {
+                let controller = makeWindowController()
+                controller.showWindow(nil)
+            }
         }
         return true
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
-        return true
+        return false
     }
 
     // MARK: - Global Hotkey (Opt+Space)
 
     private func setupGlobalHotkey() {
-        let eventMask: CGEventMask = 1 << CGEventType.keyDown.rawValue
-
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: eventMask,
-            callback: globalHotkeyCallback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else {
-            NSLog("Scout: Failed to create CGEvent tap for global hotkey. Accessibility permissions may be required.")
-            return
+        HotkeyService.shared.onHotkeyActivated = { [weak self] in
+            self?.summonApp()
         }
-
-        eventTap = tap
-        let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
+        do {
+            try HotkeyService.shared.register()
+        } catch {
+            NSLog("Scout: Failed to register global hotkey: %@", error.localizedDescription)
+        }
     }
 
     private func removeGlobalHotkey() {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            eventTap = nil
-        }
+        HotkeyService.shared.unregister()
     }
 
-    fileprivate func summonApp() {
+    private func summonApp() {
         NSApp.activate(ignoringOtherApps: true)
-        if mainWindowController?.window?.isVisible != true {
-            mainWindowController?.showWindow(nil)
+        if let controller = windowControllers.first {
+            if controller.window?.isVisible != true {
+                controller.showWindow(nil)
+            }
+            controller.window?.makeKeyAndOrderFront(nil)
+        } else {
+            let controller = makeWindowController()
+            controller.showWindow(nil)
         }
-        mainWindowController?.window?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - Main Menu
@@ -90,167 +148,154 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - App Menu
 
     private func buildAppMenu() -> NSMenuItem {
-        let appMenuItem = NSMenuItem()
-        let appMenu = NSMenu()
-
         let appName = ProcessInfo.processInfo.processName
+        let menuItem = buildMenu(title: "", items: [
+            .item("About \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator,
+            .item("Settings...", action: nil, key: ","),
+            .separator,
+            .submenu("Services", items: []),
+            .separator,
+            .item("Hide \(appName)", action: #selector(NSApplication.hide(_:)), key: "h"),
+            .item(
+                "Hide Others",
+                action: #selector(NSApplication.hideOtherApplications(_:)),
+                key: "h",
+                modifiers: [.command, .option]
+            ),
+            .item("Show All", action: #selector(NSApplication.unhideAllApplications(_:))),
+            .separator,
+            .item("Quit \(appName)", action: #selector(NSApplication.terminate(_:)), key: "q"),
+        ])
 
-        appMenu.addItem(NSMenuItem(title: "About \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
-        appMenu.addItem(NSMenuItem.separator())
+        // Wire up the Services submenu for the system
+        let appMenu = menuItem.submenu!
+        let servicesItem = appMenu.items.first { $0.title == "Services" }!
+        NSApp.servicesMenu = servicesItem.submenu
 
-        let preferencesItem = NSMenuItem(title: "Settings...", action: nil, keyEquivalent: ",")
-        appMenu.addItem(preferencesItem)
-        appMenu.addItem(NSMenuItem.separator())
-
-        let servicesMenu = NSMenu(title: "Services")
-        let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
-        servicesItem.submenu = servicesMenu
-        appMenu.addItem(servicesItem)
-        NSApp.servicesMenu = servicesMenu
-        appMenu.addItem(NSMenuItem.separator())
-
-        appMenu.addItem(NSMenuItem(title: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h"))
-
-        let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
-        hideOthersItem.keyEquivalentModifierMask = [.command, .option]
-        appMenu.addItem(hideOthersItem)
-
-        appMenu.addItem(NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
-        appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-
-        appMenuItem.submenu = appMenu
-        return appMenuItem
+        return menuItem
     }
 
     // MARK: - File Menu
 
     private func buildFileMenu() -> NSMenuItem {
-        let fileMenuItem = NSMenuItem()
-        let fileMenu = NSMenu(title: "File")
-
-        let newTabItem = NSMenuItem(title: "New Tab", action: #selector(handleNewTab(_:)), keyEquivalent: "t")
-        fileMenu.addItem(newTabItem)
-
-        let closeTabItem = NSMenuItem(title: "Close Tab", action: #selector(handleCloseTab(_:)), keyEquivalent: "w")
-        fileMenu.addItem(closeTabItem)
-
-        fileMenu.addItem(NSMenuItem.separator())
-
-        let newWindowItem = NSMenuItem(title: "New Window", action: #selector(handleNewWindow(_:)), keyEquivalent: "n")
-        fileMenu.addItem(newWindowItem)
-
-        fileMenu.addItem(NSMenuItem.separator())
-
-        let closeWindowItem = NSMenuItem(title: "Close Window", action: #selector(handleCloseWindow(_:)), keyEquivalent: "W")
-        closeWindowItem.keyEquivalentModifierMask = [.command, .shift]
-        fileMenu.addItem(closeWindowItem)
-
-        fileMenuItem.submenu = fileMenu
-        return fileMenuItem
+        buildMenu(title: "File", items: [
+            .item("New Tab", action: #selector(handleNewTab(_:)), key: "t"),
+            .item("Close Tab", action: #selector(handleCloseTab(_:)), key: "w"),
+            .separator,
+            .item(
+                "New Folder",
+                action: #selector(FileListViewController.newFolder(_:)),
+                key: "n",
+                modifiers: [.command, .shift]
+            ),
+            .separator,
+            .item("Rename", action: #selector(FileListViewController.renameSelection(_:))),
+            .separator,
+            .item("New Window", action: #selector(handleNewWindow(_:)), key: "n"),
+            .separator,
+            .item("Close Window", action: #selector(handleCloseWindow(_:)), key: "W", modifiers: [.command, .shift]),
+        ])
     }
 
     // MARK: - Edit Menu
 
     private func buildEditMenu() -> NSMenuItem {
-        let editMenuItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
-
-        editMenu.addItem(NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z"))
-        editMenu.addItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z"))
-        editMenu.addItem(NSMenuItem.separator())
-        editMenu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
-        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-        editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
-        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
-        editMenu.addItem(NSMenuItem.separator())
-
-        let searchItem = NSMenuItem(title: "Search...", action: #selector(handleSearch(_:)), keyEquivalent: "f")
-        editMenu.addItem(searchItem)
-
-        editMenuItem.submenu = editMenu
-        return editMenuItem
+        buildMenu(title: "Edit", items: [
+            .item("Undo", action: Selector(("undo:")), key: "z"),
+            .item("Redo", action: Selector(("redo:")), key: "Z"),
+            .separator,
+            .item("Cut", action: #selector(NSText.cut(_:)), key: "x"),
+            .item("Copy", action: #selector(NSText.copy(_:)), key: "c"),
+            .item(
+                "Copy Path",
+                action: #selector(FileListViewController.copyPathOfSelection(_:)),
+                key: "c",
+                modifiers: [.command, .option]
+            ),
+            .item("Paste", action: #selector(NSText.paste(_:)), key: "v"),
+            .item(
+                "Duplicate",
+                action: #selector(FileListViewController.duplicateSelection(_:)),
+                key: "d",
+                modifiers: [.command, .shift]
+            ),
+            .item("Select All", action: #selector(NSText.selectAll(_:)), key: "a"),
+            .separator,
+            .item(
+                "Move to Trash",
+                action: #selector(FileListViewController.moveToTrash(_:)),
+                key: "\u{8}",
+                modifiers: [.command]
+            ),
+            .separator,
+            .item("Search...", action: #selector(handleSearch(_:)), key: "f"),
+        ])
     }
 
     // MARK: - View Menu
 
     private func buildViewMenu() -> NSMenuItem {
-        let viewMenuItem = NSMenuItem()
-        let viewMenu = NSMenu(title: "View")
-
-        let toggleDualPaneItem = NSMenuItem(title: "Toggle Dual Pane", action: #selector(handleToggleDualPane(_:)), keyEquivalent: "d")
-        viewMenu.addItem(toggleDualPaneItem)
-
-        let togglePreviewItem = NSMenuItem(title: "Toggle Preview", action: #selector(handleTogglePreview(_:)), keyEquivalent: " ")
-        togglePreviewItem.keyEquivalentModifierMask = [.command, .shift]
-        viewMenu.addItem(togglePreviewItem)
-
-        viewMenu.addItem(NSMenuItem.separator())
-
-        let commandPaletteItem = NSMenuItem(title: "Command Palette...", action: #selector(handleCommandPalette(_:)), keyEquivalent: "P")
-        commandPaletteItem.keyEquivalentModifierMask = [.command, .shift]
-        viewMenu.addItem(commandPaletteItem)
-
-        viewMenu.addItem(NSMenuItem.separator())
-
-        let fullScreenItem = NSMenuItem(title: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
-        fullScreenItem.keyEquivalentModifierMask = [.command, .control]
-        viewMenu.addItem(fullScreenItem)
-
-        viewMenuItem.submenu = viewMenu
-        return viewMenuItem
+        buildMenu(title: "View", items: [
+            .item("Toggle Dual Pane", action: #selector(handleToggleDualPane(_:)), key: "d"),
+            .item(
+                "Toggle Preview",
+                action: #selector(handleTogglePreview(_:)),
+                key: " ",
+                modifiers: [.command, .shift]
+            ),
+            .separator,
+            .item(
+                "Command Palette...",
+                action: #selector(handleCommandPalette(_:)),
+                key: "P",
+                modifiers: [.command, .shift]
+            ),
+            .separator,
+            .item(
+                "Enter Full Screen",
+                action: #selector(NSWindow.toggleFullScreen(_:)),
+                key: "f",
+                modifiers: [.command, .control]
+            ),
+        ])
     }
 
     // MARK: - Go Menu
 
     private func buildGoMenu() -> NSMenuItem {
-        let goMenuItem = NSMenuItem()
-        let goMenu = NSMenu(title: "Go")
-
-        let goToPathItem = NSMenuItem(title: "Go to Path...", action: #selector(handleGoToPath(_:)), keyEquivalent: "l")
-        goMenu.addItem(goToPathItem)
-
-        goMenu.addItem(NSMenuItem.separator())
-
-        goMenu.addItem(NSMenuItem(title: "Home", action: #selector(handleGoHome(_:)), keyEquivalent: "H"))
-        goMenu.addItem(NSMenuItem(title: "Desktop", action: #selector(handleGoDesktop(_:)), keyEquivalent: ""))
-        goMenu.addItem(NSMenuItem(title: "Documents", action: #selector(handleGoDocuments(_:)), keyEquivalent: ""))
-        goMenu.addItem(NSMenuItem(title: "Downloads", action: #selector(handleGoDownloads(_:)), keyEquivalent: ""))
-
-        goMenuItem.submenu = goMenu
-        return goMenuItem
+        buildMenu(title: "Go", items: [
+            .item("Go to Path...", action: #selector(handleGoToPath(_:)), key: "l"),
+            .separator,
+            .item("Home", action: #selector(handleGoHome(_:)), key: "H"),
+            .item("Desktop", action: #selector(handleGoDesktop(_:))),
+            .item("Documents", action: #selector(handleGoDocuments(_:))),
+            .item("Downloads", action: #selector(handleGoDownloads(_:))),
+        ])
     }
 
     // MARK: - Window Menu
 
     private func buildWindowMenu() -> NSMenuItem {
-        let windowMenuItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Window")
-
-        windowMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m"))
-        windowMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
-        windowMenu.addItem(NSMenuItem.separator())
-        windowMenu.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
-
-        NSApp.windowsMenu = windowMenu
-
-        windowMenuItem.submenu = windowMenu
-        return windowMenuItem
+        let menuItem = buildMenu(title: "Window", items: [
+            .item("Minimize", action: #selector(NSWindow.miniaturize(_:)), key: "m"),
+            .item("Zoom", action: #selector(NSWindow.performZoom(_:))),
+            .separator,
+            .item("Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:))),
+        ])
+        NSApp.windowsMenu = menuItem.submenu
+        return menuItem
     }
 
     // MARK: - Help Menu
 
     private func buildHelpMenu() -> NSMenuItem {
-        let helpMenuItem = NSMenuItem()
-        let helpMenu = NSMenu(title: "Help")
-
         let appName = ProcessInfo.processInfo.processName
-        helpMenu.addItem(NSMenuItem(title: "\(appName) Help", action: #selector(NSApplication.showHelp(_:)), keyEquivalent: "?"))
-
-        NSApp.helpMenu = helpMenu
-
-        helpMenuItem.submenu = helpMenu
-        return helpMenuItem
+        let menuItem = buildMenu(title: "Help", items: [
+            .item("\(appName) Help", action: #selector(NSApplication.showHelp(_:)), key: "?"),
+        ])
+        NSApp.helpMenu = menuItem.submenu
+        return menuItem
     }
 
     // MARK: - Menu Actions
@@ -264,8 +309,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleNewWindow(_ sender: Any?) {
-        let controller = MainWindowController()
+        let controller = makeWindowController()
         controller.showWindow(nil)
+    }
+
+    private func makeWindowController() -> MainWindowController {
+        let controller = MainWindowController()
+        windowControllers.append(controller)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: controller.window
+        )
+        return controller
+    }
+
+    @objc private func windowDidClose(_ notification: Notification) {
+        guard let closedWindow = notification.object as? NSWindow else { return }
+        windowControllers.removeAll { $0.window === closedWindow }
     }
 
     @objc private func handleCloseWindow(_ sender: Any?) {
@@ -308,41 +370,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Will be dispatched to the active window controller via responder chain
     }
 }
-
-// MARK: - Global Hotkey Callback
-
-private func globalHotkeyCallback(
-    proxy: CGEventTapProxy,
-    type: CGEventType,
-    event: CGEvent,
-    userInfo: UnsafeMutableRawPointer?
-) -> Unmanaged<CGEvent>? {
-    guard type == .keyDown else {
-        return Unmanaged.passRetained(event)
-    }
-
-    let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-    let flags = event.flags
-
-    // Opt+Space: keyCode 49 = Space, check for Option flag without Command/Control/Shift
-    let optionOnly: CGEventFlags = .maskAlternate
-    let unwantedFlags: CGEventFlags = [.maskCommand, .maskControl, .maskShift]
-
-    if keyCode == 49,
-       flags.contains(optionOnly),
-       flags.intersection(unwantedFlags).isEmpty
-    {
-        guard let userInfo = userInfo else {
-            return Unmanaged.passRetained(event)
-        }
-        let delegate = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
-        DispatchQueue.main.async {
-            delegate.summonApp()
-        }
-        // Consume the event so it does not propagate
-        return nil
-    }
-
-    return Unmanaged.passRetained(event)
-}
-

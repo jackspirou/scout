@@ -3,7 +3,7 @@ import Foundation
 // MARK: - ViewMode
 
 /// The visual mode for displaying directory contents.
-enum ViewMode: String, Codable, CaseIterable, Sendable {
+enum ViewMode: String, Codable, CaseIterable {
     case icon
     case list
     case column
@@ -13,7 +13,7 @@ enum ViewMode: String, Codable, CaseIterable, Sendable {
 // MARK: - SortField
 
 /// Which file attribute to sort by.
-enum SortField: String, Codable, CaseIterable, Sendable {
+enum SortField: String, Codable, CaseIterable {
     case name
     case dateModified
     case dateCreated
@@ -24,7 +24,7 @@ enum SortField: String, Codable, CaseIterable, Sendable {
 // MARK: - SortOrder
 
 /// Ascending or descending sort direction.
-enum SortOrder: String, Codable, CaseIterable, Sendable {
+enum SortOrder: String, Codable, CaseIterable {
     case ascending
     case descending
 }
@@ -32,7 +32,7 @@ enum SortOrder: String, Codable, CaseIterable, Sendable {
 // MARK: - GroupBy
 
 /// Grouping criterion for file list display.
-enum GroupBy: String, Codable, CaseIterable, Sendable {
+enum GroupBy: String, Codable, CaseIterable {
     case none
     case kind
     case dateModified
@@ -44,7 +44,7 @@ enum GroupBy: String, Codable, CaseIterable, Sendable {
 // MARK: - ViewSettings
 
 /// Persisted settings for how a pane displays its contents.
-struct ViewSettings: Codable, Equatable, Sendable {
+struct ViewSettings: Codable, Equatable {
     var viewMode: ViewMode
     var sortField: SortField
     var sortOrder: SortOrder

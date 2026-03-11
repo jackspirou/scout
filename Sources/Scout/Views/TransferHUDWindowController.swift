@@ -12,7 +12,6 @@ import Cocoa
 /// The HUD auto-shows when the first transfer is added and auto-hides
 /// once all transfers have been removed.
 final class TransferHUDWindowController: NSWindowController {
-
     // MARK: - Properties
 
     private let tableView = NSTableView()
@@ -257,7 +256,6 @@ final class TransferHUDWindowController: NSWindowController {
 // MARK: - NSTableViewDataSource
 
 extension TransferHUDWindowController: NSTableViewDataSource {
-
     func numberOfRows(in tableView: NSTableView) -> Int {
         operations.count
     }
@@ -266,7 +264,6 @@ extension TransferHUDWindowController: NSTableViewDataSource {
 // MARK: - NSTableViewDelegate
 
 extension TransferHUDWindowController: NSTableViewDelegate {
-
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard operations.indices.contains(row) else { return nil }
         let operation = operations[row]
@@ -394,7 +391,8 @@ extension TransferHUDWindowController: NSTableViewDelegate {
     private func configureTransferCell(_ cell: NSView, with operation: TransferOperation, row: Int) {
         let iconView = cell.viewWithTag(1) as? NSImageView
         let nameLabel = cell.viewWithTag(2) as? NSTextField
-        let progressBar = cell.subviews.first(where: { $0.identifier == NSUserInterfaceItemIdentifier("progressBar") }) as? NSProgressIndicator
+        let progressBar = cell.subviews
+            .first(where: { $0.identifier == NSUserInterfaceItemIdentifier("progressBar") }) as? NSProgressIndicator
         let speedLabel = cell.viewWithTag(4) as? NSTextField
         let pauseButton = cell.viewWithTag(5) as? NSButton
         let cancelButton = cell.viewWithTag(6) as? NSButton
@@ -478,7 +476,8 @@ extension TransferHUDWindowController: NSTableViewDelegate {
         switch operation.status {
         case .inProgress:
             if let eta = operation.estimatedTimeRemaining,
-               let formatted = Self.timeFormatter.string(from: eta) {
+               let formatted = Self.timeFormatter.string(from: eta)
+            {
                 return "\(formatted) remaining"
             }
             return ""

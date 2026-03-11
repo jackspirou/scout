@@ -1,11 +1,28 @@
 import Cocoa
 
+// MARK: - Titleless Window
+
+/// NSWindow subclass that suppresses all automatic title updates.
+/// macOS sets the window title from child view controllers and content;
+/// this prevents any title or proxy icon from appearing in the title bar.
+private final class TitlelessWindow: NSWindow {
+    override var title: String {
+        get { "" }
+        set { /* ignored */ }
+    }
+
+    override var representedURL: URL? {
+        get { nil }
+        set { /* ignored */ }
+    }
+}
+
 // MARK: - Toolbar Item Identifiers
 
 private extension NSToolbarItem.Identifier {
     static let backButton = NSToolbarItem.Identifier("com.scout.toolbar.back")
     static let forwardButton = NSToolbarItem.Identifier("com.scout.toolbar.forward")
-    static let pathBar = NSToolbarItem.Identifier("com.scout.toolbar.pathBar")
+
     static let viewMode = NSToolbarItem.Identifier("com.scout.toolbar.viewMode")
     static let searchField = NSToolbarItem.Identifier("com.scout.toolbar.search")
     static let toggleDualPane = NSToolbarItem.Identifier("com.scout.toolbar.dualPane")
@@ -15,7 +32,6 @@ private extension NSToolbarItem.Identifier {
 // MARK: - MainWindowController
 
 final class MainWindowController: NSWindowController {
-
     // MARK: - Properties
 
     private(set) var isDualPane: Bool = false {
@@ -26,10 +42,12 @@ final class MainWindowController: NSWindowController {
         didSet { previewDidChange() }
     }
 
-    private let splitViewController = NSSplitViewController()
+    private let contentController = NSViewController()
+    private let splitView = NSSplitView()
     private let browserContainer = BrowserContainerViewController()
     private let previewViewController = NSViewController() // Placeholder for future preview implementation
 
+    private var isPreviewCollapsed: Bool = true
     private var searchField: NSSearchField?
 
     // MARK: - Initialization
@@ -44,44 +62,59 @@ final class MainWindowController: NSWindowController {
     // MARK: - Window Factory
 
     private static func makeWindow() -> NSWindow {
-        let window = NSWindow(
+        let window = TitlelessWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Scout"
+        window.title = ""
         window.minSize = NSSize(width: 800, height: 600)
         window.setContentSize(NSSize(width: 1200, height: 800))
         window.center()
-        window.titlebarAppearsTransparent = false
-        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.toolbarStyle = .unifiedCompact
         window.isReleasedWhenClosed = false
-        window.tabbingMode = .preferred
+        window.tabbingMode = .disallowed
         return window
     }
 
     // MARK: - Content Configuration
 
     private func configureContentSplitView() {
-        // Browser container as the main content area (left/primary pane)
-        let browserItem = NSSplitViewItem(contentListWithViewController: browserContainer)
-        browserItem.minimumThickness = 400
-        browserItem.canCollapse = false
-        splitViewController.addSplitViewItem(browserItem)
+        // Use a plain NSViewController + NSSplitView (NOT NSSplitViewController)
+        // to avoid macOS automatically injecting a navigation title into the toolbar.
+        let containerView = NSView()
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        contentController.view = containerView
 
-        // Preview pane (right, hidden by default)
-        let previewItem = NSSplitViewItem(viewController: previewViewController)
-        previewItem.minimumThickness = 250
-        previewItem.preferredThicknessFraction = 0.3
-        previewItem.canCollapse = true
-        previewItem.isCollapsed = true
-        splitViewController.addSplitViewItem(previewItem)
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        splitView.delegate = self
+        splitView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(splitView)
 
-        splitViewController.splitView.dividerStyle = .thin
-        splitViewController.splitView.isVertical = true
+        NSLayoutConstraint.activate([
+            splitView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            splitView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+            splitView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+        ])
 
-        window?.contentViewController = splitViewController
+        // Add browser container as the primary pane
+        contentController.addChild(browserContainer)
+        browserContainer.view.translatesAutoresizingMaskIntoConstraints = false
+        splitView.addSubview(browserContainer.view)
+
+        // Add preview pane (hidden by default)
+        contentController.addChild(previewViewController)
+        previewViewController.view = NSView()
+        previewViewController.view.translatesAutoresizingMaskIntoConstraints = false
+        splitView.addSubview(previewViewController.view)
+        previewViewController.view.isHidden = true
+
+        window?.contentViewController = contentController
     }
 
     // MARK: - Toolbar
@@ -122,13 +155,13 @@ final class MainWindowController: NSWindowController {
     }
 
     private func previewDidChange() {
-        guard splitViewController.splitViewItems.count > 1 else { return }
-        let previewItem = splitViewController.splitViewItems[1]
+        isPreviewCollapsed = !showPreview
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
             context.allowsImplicitAnimation = true
-            previewItem.animator().isCollapsed = !showPreview
+            previewViewController.view.animator().isHidden = isPreviewCollapsed
+            splitView.adjustSubviews()
         }
     }
 }
@@ -136,13 +169,10 @@ final class MainWindowController: NSWindowController {
 // MARK: - NSToolbarDelegate
 
 extension MainWindowController: NSToolbarDelegate {
-
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             .backButton,
             .forwardButton,
-            .flexibleSpace,
-            .pathBar,
             .flexibleSpace,
             .viewMode,
             .searchField,
@@ -165,8 +195,6 @@ extension MainWindowController: NSToolbarDelegate {
             return makeBackItem(identifier: itemIdentifier)
         case .forwardButton:
             return makeForwardItem(identifier: itemIdentifier)
-        case .pathBar:
-            return makePathBarItem(identifier: itemIdentifier)
         case .viewMode:
             return makeViewModeItem(identifier: itemIdentifier)
         case .searchField:
@@ -204,21 +232,6 @@ extension MainWindowController: NSToolbarDelegate {
         return item
     }
 
-    private func makePathBarItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "Path"
-        item.paletteLabel = "Path Bar"
-
-        let pathControl = NSPathControl()
-        pathControl.pathStyle = .standard
-        pathControl.url = FileManager.default.homeDirectoryForCurrentUser
-        pathControl.translatesAutoresizingMaskIntoConstraints = false
-        pathControl.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
-
-        item.view = pathControl
-        return item
-    }
-
     private func makeViewModeItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = "View"
@@ -230,7 +243,7 @@ extension MainWindowController: NSToolbarDelegate {
             NSImage(systemSymbolName: "rectangle.grid.1x2", accessibilityDescription: "Column")!,
         ], trackingMode: .selectOne, target: self, action: #selector(viewModeChanged(_:)))
         segmented.selectedSegment = 0
-        segmented.segmentStyle = .separated
+        segmented.segmentStyle = .automatic
 
         item.view = segmented
         return item
@@ -240,7 +253,7 @@ extension MainWindowController: NSToolbarDelegate {
         let searchItem = NSSearchToolbarItem(itemIdentifier: identifier)
         searchItem.searchField.placeholderString = "Search"
         searchItem.searchField.delegate = self
-        self.searchField = searchItem.searchField
+        searchField = searchItem.searchField
         return searchItem
     }
 
@@ -289,10 +302,37 @@ extension MainWindowController: NSToolbarDelegate {
     }
 }
 
+// MARK: - NSSplitViewDelegate
+
+extension MainWindowController: NSSplitViewDelegate {
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainMinCoordinate proposedMinimumPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int
+    ) -> CGFloat {
+        400
+    }
+
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int
+    ) -> CGFloat {
+        splitView.bounds.width - 250
+    }
+
+    func splitView(_ splitView: NSSplitView, canCollapseSubview subview: NSView) -> Bool {
+        subview === previewViewController.view
+    }
+
+    func splitView(_ splitView: NSSplitView, shouldHideDividerAt dividerIndex: Int) -> Bool {
+        isPreviewCollapsed
+    }
+}
+
 // MARK: - NSSearchFieldDelegate
 
 extension MainWindowController: NSSearchFieldDelegate {
-
     func controlTextDidChange(_ obj: Notification) {
         guard let searchField = obj.object as? NSSearchField else { return }
         let query = searchField.stringValue

@@ -12,17 +12,17 @@ enum PersistenceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .encodingFailed(let detail):
+        case let .encodingFailed(detail):
             return "Failed to encode data: \(detail)"
-        case .decodingFailed(let detail):
+        case let .decodingFailed(detail):
             return "Failed to decode data: \(detail)"
-        case .writeFailed(let detail):
+        case let .writeFailed(detail):
             return "Failed to write data: \(detail)"
-        case .readFailed(let detail):
+        case let .readFailed(detail):
             return "Failed to read data: \(detail)"
-        case .deleteFailed(let detail):
+        case let .deleteFailed(detail):
             return "Failed to delete data: \(detail)"
-        case .directoryCreationFailed(let detail):
+        case let .directoryCreationFailed(detail):
             return "Failed to create directory: \(detail)"
         }
     }
@@ -33,7 +33,6 @@ enum PersistenceError: LocalizedError {
 /// Service for persisting app state using UserDefaults and Codable JSON files.
 /// Data is stored in ~/Library/Application Support/Scout/.
 final class PersistenceService: Sendable {
-
     // MARK: - Constants
 
     private enum StoreKey {
@@ -50,7 +49,8 @@ final class PersistenceService: Sendable {
 
     private let appSupportDirectory: URL
     private let workspacesDirectory: URL
-    private let defaults: UserDefaults
+    // UserDefaults is documented as thread-safe; suppress the Sendable diagnostic.
+    private nonisolated(unsafe) let defaults: UserDefaults
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
@@ -60,7 +60,7 @@ final class PersistenceService: Sendable {
         suiteName: String? = nil,
         appSupportOverride: URL? = nil
     ) {
-        self.defaults = suiteName.flatMap { UserDefaults(suiteName: $0) } ?? .standard
+        defaults = suiteName.flatMap { UserDefaults(suiteName: $0) } ?? .standard
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -72,26 +72,26 @@ final class PersistenceService: Sendable {
         self.decoder = decoder
 
         if let override = appSupportOverride {
-            self.appSupportDirectory = override
+            appSupportDirectory = override
         } else {
             let paths = FileManager.default.urls(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask
             )
-            self.appSupportDirectory =
+            appSupportDirectory =
                 paths.first?.appendingPathComponent("Scout", isDirectory: true)
-                ?? URL(fileURLWithPath: NSHomeDirectory())
+                    ?? URL(fileURLWithPath: NSHomeDirectory())
                     .appendingPathComponent("Library/Application Support/Scout", isDirectory: true)
         }
 
-        self.workspacesDirectory = self.appSupportDirectory.appendingPathComponent(
+        workspacesDirectory = appSupportDirectory.appendingPathComponent(
             FileName.workspacesDirectory,
             isDirectory: true
         )
 
         // Ensure directories exist.
-        PersistenceService.ensureDirectoryExists(at: self.appSupportDirectory)
-        PersistenceService.ensureDirectoryExists(at: self.workspacesDirectory)
+        PersistenceService.ensureDirectoryExists(at: appSupportDirectory)
+        PersistenceService.ensureDirectoryExists(at: workspacesDirectory)
     }
 
     // MARK: - View Settings

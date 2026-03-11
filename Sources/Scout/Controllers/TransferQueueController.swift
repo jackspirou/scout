@@ -14,15 +14,15 @@ enum TransferError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .operationNotFound(let id):
+        case let .operationNotFound(id):
             return "Transfer operation not found: \(id)"
-        case .operationAlreadyRunning(let id):
+        case let .operationAlreadyRunning(id):
             return "Transfer operation already running: \(id)"
-        case .operationCancelled(let id):
+        case let .operationCancelled(id):
             return "Transfer operation was cancelled: \(id)"
-        case .transferFailed(let reason):
+        case let .transferFailed(reason):
             return "Transfer failed: \(reason)"
-        case .destinationNotFound(let url):
+        case let .destinationNotFound(url):
             return "Destination not found: \(url.path)"
         }
     }
@@ -34,7 +34,6 @@ enum TransferError: LocalizedError {
 @Observable
 @MainActor
 final class TransferQueueController {
-
     // MARK: - Properties
 
     private(set) var operations: [TransferOperation] = []
@@ -105,7 +104,8 @@ final class TransferQueueController {
         }
 
         for operation in operations
-        where operation.status != .completed && operation.status != .failed {
+            where operation.status != .completed && operation.status != .failed
+        {
             operation.status = .cancelled
         }
 

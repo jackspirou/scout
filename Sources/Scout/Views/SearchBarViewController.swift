@@ -37,7 +37,12 @@ struct SearchBarFilter: Hashable {
 
 protocol SearchBarDelegate: AnyObject {
     /// Called when the search query or filters change and new results should be displayed.
-    func searchBar(_ controller: SearchBarViewController, didUpdateQuery query: String, scope: SearchBarScope, filters: [SearchBarFilter])
+    func searchBar(
+        _ controller: SearchBarViewController,
+        didUpdateQuery query: String,
+        scope: SearchBarScope,
+        filters: [SearchBarFilter]
+    )
     /// Called when the user dismisses the search bar.
     func searchBarDidDismiss(_ controller: SearchBarViewController)
 }
@@ -45,7 +50,6 @@ protocol SearchBarDelegate: AnyObject {
 // MARK: - SearchBarViewController
 
 final class SearchBarViewController: NSViewController {
-
     // MARK: - Properties
 
     weak var delegate: SearchBarDelegate?
@@ -156,7 +160,12 @@ final class SearchBarViewController: NSViewController {
         // Size filter
         let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
         let sizeSubmenu = NSMenu()
-        for (label, value) in [("< 1 MB", "lt1mb"), ("1-10 MB", "1to10mb"), ("10-100 MB", "10to100mb"), ("> 100 MB", "gt100mb")] {
+        for (label, value) in [
+            ("< 1 MB", "lt1mb"),
+            ("1-10 MB", "1to10mb"),
+            ("10-100 MB", "10to100mb"),
+            ("> 100 MB", "gt100mb"),
+        ] {
             let item = NSMenuItem(title: label, action: #selector(addSizeFilter(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = value
@@ -168,7 +177,12 @@ final class SearchBarViewController: NSViewController {
         // Date modified filter
         let dateItem = NSMenuItem(title: "Date Modified", action: nil, keyEquivalent: "")
         let dateSubmenu = NSMenu()
-        for (label, value) in [("Today", "today"), ("Last 7 days", "week"), ("Last 30 days", "month"), ("Last year", "year")] {
+        for (label, value) in [
+            ("Today", "today"),
+            ("Last 7 days", "week"),
+            ("Last 30 days", "month"),
+            ("Last year", "year"),
+        ] {
             let item = NSMenuItem(title: label, action: #selector(addDateFilter(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = value
@@ -213,7 +227,10 @@ final class SearchBarViewController: NSViewController {
             // Add filter button at the end of the filter stack
             filterMenuButton.centerYAnchor.constraint(equalTo: filterTokenStack.centerYAnchor),
             filterMenuButton.leadingAnchor.constraint(equalTo: filterTokenStack.trailingAnchor, constant: 4),
-            filterMenuButton.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -Layout.padding),
+            filterMenuButton.trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor,
+                constant: -Layout.padding
+            ),
 
             // Bottom constraint
             filterTokenStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -4),
@@ -351,13 +368,13 @@ final class SearchBarViewController: NSViewController {
 // MARK: - NSSearchFieldDelegate
 
 extension SearchBarViewController: NSSearchFieldDelegate {
-
     func controlTextDidChange(_ obj: Notification) {
         // Debounce the search query
         debounceTimer?.invalidate()
-        debounceTimer = Timer.scheduledTimer(withTimeInterval: Layout.debounceInterval, repeats: false) { [weak self] _ in
-            self?.notifyDelegate()
-        }
+        debounceTimer = Timer
+            .scheduledTimer(withTimeInterval: Layout.debounceInterval, repeats: false) { [weak self] _ in
+                self?.notifyDelegate()
+            }
     }
 
     func searchFieldDidStartSearching(_ sender: NSSearchField) {

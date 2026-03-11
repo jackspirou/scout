@@ -4,7 +4,7 @@ import Foundation
 // MARK: - KeyboardShortcut
 
 /// Represents a single keyboard shortcut binding.
-struct KeyboardShortcut: Identifiable, Sendable {
+struct KeyboardShortcut: Identifiable {
     let id: String
     let key: String
     let modifiers: NSEvent.ModifierFlags
@@ -17,7 +17,7 @@ struct KeyboardShortcut: Identifiable, Sendable {
         action: String,
         category: ShortcutCategory = .general
     ) {
-        self.id = action
+        id = action
         self.key = key
         self.modifiers = modifiers
         self.action = action
@@ -27,7 +27,7 @@ struct KeyboardShortcut: Identifiable, Sendable {
 
 // MARK: - ShortcutCategory
 
-enum ShortcutCategory: String, CaseIterable, Sendable {
+enum ShortcutCategory: String, CaseIterable {
     case navigation = "Navigation"
     case fileOperations = "File Operations"
     case view = "View"
@@ -40,7 +40,6 @@ enum ShortcutCategory: String, CaseIterable, Sendable {
 
 /// Defines all keyboard shortcuts used in Scout.
 enum KeyboardShortcuts {
-
     // MARK: - Navigation
 
     static let navigateBack = KeyboardShortcut(
@@ -385,7 +384,6 @@ enum KeyboardShortcuts {
 
 /// Matches keyboard events to registered shortcuts.
 struct ShortcutMatcher {
-
     /// Whether vim mode is enabled.
     var vimModeEnabled: Bool
 

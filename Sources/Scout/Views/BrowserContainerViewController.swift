@@ -3,14 +3,28 @@ import Cocoa
 // MARK: - BrowserContainerViewController
 
 final class BrowserContainerViewController: NSViewController {
-
     // MARK: - Properties
 
     private let splitView = NSSplitView()
-    private let leftPane = BrowserPaneViewController()
-    private let rightPane = BrowserPaneViewController()
+    private let clipboardManager: ClipboardManager
+    private let leftPane: BrowserPaneViewController
+    private let rightPane: BrowserPaneViewController
 
     private var isDualPane: Bool = false
+
+    // MARK: - Init
+
+    init(clipboardManager: ClipboardManager = ClipboardManager()) {
+        self.clipboardManager = clipboardManager
+        leftPane = BrowserPaneViewController(clipboardManager: clipboardManager)
+        rightPane = BrowserPaneViewController(clipboardManager: clipboardManager)
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
 
     /// Tracks which pane currently holds focus. `true` means the left pane is active.
     private var leftPaneIsActive: Bool = true
@@ -122,15 +136,15 @@ final class BrowserContainerViewController: NSViewController {
     }
 
     private func updateActiveIndicator() {
-        leftPane.setActive(leftPaneIsActive)
-        rightPane.setActive(!leftPaneIsActive && isDualPane)
+        leftPane.setActive(isDualPane && leftPaneIsActive)
+        rightPane.setActive(isDualPane && !leftPaneIsActive)
     }
 
     // MARK: - Key Handling
 
     override func keyDown(with event: NSEvent) {
         // Tab key switches focus between panes
-        if event.keyCode == 48 /* Tab */ && isDualPane {
+        if event.keyCode == 48 /* Tab */, isDualPane {
             switchFocus()
             return
         }
@@ -141,7 +155,6 @@ final class BrowserContainerViewController: NSViewController {
 // MARK: - NSSplitViewDelegate
 
 extension BrowserContainerViewController: NSSplitViewDelegate {
-
     func splitView(
         _ splitView: NSSplitView,
         constrainMinCoordinate proposedMinimumPosition: CGFloat,

@@ -26,7 +26,6 @@ enum HotkeyError: LocalizedError {
 /// Uses CGEvent tap for the global Opt+Space hotkey.
 /// Requires accessibility permissions (System Settings > Privacy & Security > Accessibility).
 final class HotkeyService: @unchecked Sendable {
-
     // MARK: - Singleton
 
     static let shared = HotkeyService()
@@ -92,10 +91,10 @@ final class HotkeyService: @unchecked Sendable {
             throw HotkeyError.eventTapCreationFailed
         }
 
-        self.eventTap = tap
+        eventTap = tap
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        self.runLoopSource = source
+        runLoopSource = source
 
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
@@ -179,7 +178,6 @@ private func hotkeyEventCallback(
     event: CGEvent,
     userInfo: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
-
     // Handle tap disabled events (system can disable taps under load).
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         if let userInfo {

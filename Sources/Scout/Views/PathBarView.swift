@@ -12,7 +12,6 @@ protocol PathBarDelegate: AnyObject {
 // MARK: - PathBarView
 
 final class PathBarView: NSView {
-
     // MARK: - Properties
 
     weak var delegate: PathBarDelegate?
@@ -291,7 +290,6 @@ final class PathBarView: NSView {
 // MARK: - NSTextFieldDelegate
 
 extension PathBarView: NSTextFieldDelegate {
-
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
             cancelEditMode()
@@ -305,7 +303,6 @@ extension PathBarView: NSTextFieldDelegate {
 
 /// A button that stores its associated URL for path component navigation.
 private final class PathComponentButton: NSButton {
-
     let url: URL
 
     init(title: String, url: URL) {
