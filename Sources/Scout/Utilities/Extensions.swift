@@ -65,9 +65,57 @@ extension Int64 {
     }
 }
 
+// MARK: - UInt16 Extension
+
+extension UInt16 {
+    var unixPermissionString: String {
+        let chars: [Character] = [
+            (self & 0o400 != 0) ? "r" : "-",
+            (self & 0o200 != 0) ? "w" : "-",
+            (self & 0o100 != 0) ? "x" : "-",
+            (self & 0o040 != 0) ? "r" : "-",
+            (self & 0o020 != 0) ? "w" : "-",
+            (self & 0o010 != 0) ? "x" : "-",
+            (self & 0o004 != 0) ? "r" : "-",
+            (self & 0o002 != 0) ? "w" : "-",
+            (self & 0o001 != 0) ? "x" : "-",
+        ]
+        return String(chars)
+    }
+}
+
 // MARK: - Date Extension
 
 extension Date {
+    private static let fullDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
+
+    private static let monthDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    private static let monthDayYearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter
+    }()
+
+    var fullFormatted: String {
+        Date.fullDateFormatter.string(from: self)
+    }
+
     /// Returns a relative-formatted string.
     /// - "Just now" for dates within the last minute
     /// - "Today" / "Yesterday" for recent dates
@@ -84,29 +132,21 @@ extension Date {
         }
 
         if calendar.isDateInToday(self) {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "h:mm a"
-            return "Today, \(formatter.string(from: self))"
+            return "Today, \(Date.timeFormatter.string(from: self))"
         }
 
         if calendar.isDateInYesterday(self) {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "h:mm a"
-            return "Yesterday, \(formatter.string(from: self))"
+            return "Yesterday, \(Date.timeFormatter.string(from: self))"
         }
 
         let currentYear = calendar.component(.year, from: now)
         let dateYear = calendar.component(.year, from: self)
 
         if currentYear == dateYear {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return formatter.string(from: self)
+            return Date.monthDayFormatter.string(from: self)
         }
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter.string(from: self)
+        return Date.monthDayYearFormatter.string(from: self)
     }
 }
 

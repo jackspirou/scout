@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 
 /// Represents a single file system item with its metadata.
 struct FileItem: Identifiable, Hashable {
@@ -20,6 +21,7 @@ struct FileItem: Identifiable, Hashable {
     let isPackage: Bool
     let contentType: String?
     let permissions: UInt16
+    let isLocked: Bool
     let isText: Bool
     let highlightrLanguage: String?
 
@@ -40,6 +42,23 @@ struct FileItem: Identifiable, Hashable {
     var formattedSize: String {
         guard let size = size else { return "--" }
         return FileItem.byteCountFormatter.string(fromByteCount: size)
+    }
+
+    var formattedPermissions: String {
+        let typeChar: Character = isDirectory ? "d" : isSymlink ? "l" : "-"
+        let rwx = permissions.unixPermissionString
+        let octal = String(permissions, radix: 8)
+        return "\(typeChar)\(rwx) (\(octal))"
+    }
+
+    var parentPath: String {
+        url.deletingLastPathComponent().path
+    }
+
+    /// Queries Spotlight for the last-opened date on demand (avoids per-file cost in directory listings).
+    var lastOpenedDate: Date? {
+        guard let mdItem = MDItemCreateWithURL(kCFAllocatorDefault, url as CFURL) else { return nil }
+        return MDItemCopyAttribute(mdItem, kMDItemLastUsedDate as CFString) as? Date
     }
 
     /// Alias for backward compatibility with code that uses `fileSize`.
@@ -72,7 +91,8 @@ struct FileItem: Identifiable, Hashable {
         iconStyle: IconStyle = .system,
         contentType: String? = nil,
         tags: [String] = [],
-        permissions: UInt16 = 0o644
+        permissions: UInt16 = 0o644,
+        isLocked: Bool = false
     ) {
         self.url = url
         self.name = name
@@ -86,6 +106,7 @@ struct FileItem: Identifiable, Hashable {
         self.contentType = contentType
         self.tags = tags
         self.permissions = permissions
+        self.isLocked = isLocked
 
         // Resolve file type for any missing properties.
         if icon == nil || kind == nil || isText == nil {
@@ -132,6 +153,7 @@ struct FileItem: Identifiable, Hashable {
             .isPackageKey,
             .contentTypeKey,
             .tagNamesKey,
+            .isUserImmutableKey,
         ]
 
         guard let resourceValues = try? url.resourceValues(forKeys: resourceKeys) else {
@@ -154,12 +176,14 @@ struct FileItem: Identifiable, Hashable {
                 isText: resolved.isText,
                 highlightrLanguage: resolved.highlightrLanguage,
                 iconStyle: iconStyle,
-                tags: []
+                tags: [],
+                isLocked: false
             )
         }
 
         let isDirectory = resourceValues.isDirectory ?? false
         let size: Int64? = isDirectory ? nil : Int64(resourceValues.totalFileSize ?? resourceValues.fileSize ?? 0)
+        let isLocked = resourceValues.isUserImmutable ?? false
         let resolved = FileTypeResolver.resolve(
             url: url,
             isDirectory: isDirectory,
@@ -183,7 +207,8 @@ struct FileItem: Identifiable, Hashable {
             highlightrLanguage: resolved.highlightrLanguage,
             iconStyle: iconStyle,
             contentType: resourceValues.contentType?.identifier,
-            tags: resourceValues.tagNames ?? []
+            tags: resourceValues.tagNames ?? [],
+            isLocked: isLocked
         )
     }
 

@@ -50,7 +50,7 @@ final class MainWindowController: NSWindowController {
     private let contentController = NSViewController()
     private let splitView = NSSplitView()
     private let browserContainer = BrowserContainerViewController()
-    private let previewViewController = TextFilePreviewViewController()
+    private let previewViewController = PreviewViewController()
     private var searchField: NSSearchField?
 
     // MARK: - Initialization

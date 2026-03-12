@@ -66,3 +66,28 @@ ci: add macOS 15 to CI matrix
 - Icon PNGs have pre-rendered macOS squircle mask (superellipse n=5.0)
 - Asset catalog is compiled with `actool`, bundle is ad-hoc code signed
 - Global hotkey (Opt+Space) uses CGEvent tap, requires accessibility permissions
+
+## AppKit Pitfalls & Patterns
+
+### Window Toolbar Overlap
+- `titlebarAppearsTransparent = true` causes the content view to extend behind the toolbar, even without `.fullSizeContentView` in the style mask
+- `window.contentLayoutRect` returns the **full content area** when `titlebarAppearsTransparent` is set — it does NOT exclude the toolbar. Do not use it to compute toolbar height.
+- `view.safeAreaLayoutGuide.topAnchor` does NOT propagate correctly through NSSplitView subview hierarchies
+- `NSScrollView.contentInsets.top` is only auto-set when the scroll view itself extends into the toolbar area
+- **Correct toolbar height formula**: `window.frame.height - (window.contentView?.frame.maxY ?? window.frame.height)` — this gives the actual title bar + toolbar overlap on the content view
+- Views at `view.topAnchor` will be hidden behind the toolbar; offset them by the computed toolbar height in `viewDidLayout()`
+
+### NSView Drawing & Z-Order
+- **Never use `NSView.draw(_ dirtyRect:)` with `dirtyRect.fill()` for background views** — the dirtyRect can bleed beyond the view's bounds when the view is layered above siblings, painting over unrelated content. Use layer-backed backgrounds instead: `view.wantsLayer = true; view.layer?.backgroundColor = color.cgColor`
+- Update layer backgrounds on appearance change since `layer.backgroundColor` doesn't auto-adapt (observe `effectiveAppearance`)
+- Subview order = z-order in AppKit. Later subviews draw on top. If a header must overlay content, add it to the superview **after** the content views
+- When views at different Y positions still visually overlap, check if a `draw()` override is painting outside its bounds
+
+### NSBox Separator
+- `NSBox(boxType: .separator)` has an intrinsic height of ~5px that overrides explicit height constraints
+- For a true 1px separator, use `NSBox(boxType: .custom)` with `borderWidth = 0`, `fillColor = .separatorColor`, and an explicit height constraint
+
+### NSRulerView vs Custom Line Numbers
+- `NSRulerView` subclasses break on macOS 14+ (Sonoma) due to Apple's `clipsToBounds` default change — text content disappears or renders incorrectly (documented in Apple Forums and affected projects like Scintilla, CotEditor)
+- The modern pattern (used by CotEditor, TextViewLineNumbers, and this project) is a standalone `NSView` alongside (not inside) the scroll view, synced via `boundsDidChangeNotification` on the scroll view's clip view
+- Our `LineNumberRulerView` follows this pattern with O(log n) binary search line lookup and dynamic gutter width
