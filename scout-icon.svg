@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <clipPath id="squircle">
+      <rect x="64" y="64" width="896" height="896" rx="200" />
+    </clipPath>
+  </defs>
+
+  <rect clip-path="url(#squircle)" x="64" y="64" width="896" height="896" fill="#7FB3D5" />
+
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="4" />
+
+  <g id="bulldog-flat">
+
+    <path d="M 280 340 C 200 360, 180 480, 220 520 C 250 550, 280 480, 280 440 Z" fill="#EAE0D2" />
+    <path d="M 744 340 C 824 360, 844 480, 804 520 C 774 550, 744 480, 744 440 Z" fill="#EAE0D2" />
+
+    <path d="M 320 340
+             C 400 280, 624 280, 704 340
+             C 760 390, 780 480, 760 560
+             C 800 660, 740 780, 640 800
+             C 580 810, 540 760, 512 760
+             C 484 760, 444 810, 384 800
+             C 284 780, 224 660, 264 560
+             C 244 480, 264 390, 320 340 Z"
+          fill="#F4EFE6" />
+
+    <path d="M 290 440 C 290 350, 420 350, 460 410 C 490 460, 460 540, 400 560 C 330 580, 290 520, 290 440 Z" fill="#4A3B32" />
+
+    <circle cx="380" cy="460" r="18" fill="#1A1A1A" />
+    <circle cx="374" cy="454" r="5" fill="#FFFFFF" /> <circle cx="644" cy="460" r="18" fill="#1A1A1A" />
+    <circle cx="638" cy="454" r="5" fill="#FFFFFF" /> <path d="M 430 510 C 480 470, 544 470, 594 510" stroke="#DBCBB3" stroke-width="12" stroke-linecap="round" fill="none" />
+    <path d="M 450 460 Q 512 430 574 460" stroke="#DBCBB3" stroke-width="10" stroke-linecap="round" fill="none" />
+
+    <path d="M 450 560 C 450 530, 574 530, 574 560 C 574 590, 540 610, 512 610 C 484 610, 450 590, 450 560 Z" fill="#1A1A1A" />
+
+    <path d="M 512 610 L 512 650" stroke="#1A1A1A" stroke-width="12" stroke-linecap="round" />
+
+    <path d="M 512 650 C 440 650, 380 690, 360 760" stroke="#1A1A1A" stroke-width="14" stroke-linecap="round" fill="none" />
+
+    <path d="M 512 650 C 584 650, 644 690, 664 760" stroke="#1A1A1A" stroke-width="14" stroke-linecap="round" fill="none" />
+
+    <path d="M 460 700 C 480 680, 544 680, 564 700 C 544 720, 480 720, 460 700 Z" fill="#1A1A1A" />
+
+    <path d="M 320 560 Q 300 620 330 680" stroke="#DBCBB3" stroke-width="10" stroke-linecap="round" fill="none" />
+    <path d="M 704 560 Q 724 620 694 680" stroke="#DBCBB3" stroke-width="10" stroke-linecap="round" fill="none" />
+
+  </g>
+</svg>

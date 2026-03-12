@@ -52,7 +52,8 @@ actor FileSystemService {
     func contentsOfDirectory(
         at url: URL,
         sortedBy sortField: SortField = .name,
-        order: SortOrder = .ascending
+        order: SortOrder = .ascending,
+        iconStyle: IconStyle = .system
     ) async throws -> [FileItem] {
         guard directoryExists(at: url) else {
             throw FileSystemError.directoryNotFound(url)
@@ -70,7 +71,6 @@ actor FileSystemService {
             .creationDateKey,
             .contentTypeKey,
             .localizedTypeDescriptionKey,
-            .effectiveIconKey,
             .tagNamesKey,
             .fileSecurityKey,
         ]
@@ -93,7 +93,7 @@ actor FileSystemService {
         items.reserveCapacity(contents.count)
 
         for fileURL in contents {
-            let item = buildFileItem(from: fileURL, resourceKeys: resourceKeys)
+            let item = buildFileItem(from: fileURL, resourceKeys: resourceKeys, iconStyle: iconStyle)
             items.append(item)
         }
 
@@ -108,12 +108,12 @@ actor FileSystemService {
     // MARK: - File Info
 
     /// Returns detailed information about a single file or directory.
-    func fileInfo(at url: URL) async throws -> FileItem {
+    func fileInfo(at url: URL, iconStyle: IconStyle = .system) async throws -> FileItem {
         guard fileManager.fileExists(atPath: url.path) else {
             throw FileSystemError.fileNotFound(url)
         }
 
-        guard let item = FileItem.create(from: url) else {
+        guard let item = FileItem.create(from: url, iconStyle: iconStyle) else {
             throw FileSystemError.operationFailed(
                 "Failed to read attributes for \(url.path)"
             )
@@ -358,9 +358,9 @@ actor FileSystemService {
     }
 
     /// Builds a FileItem from a URL using pre-fetched resource values.
-    private func buildFileItem(from url: URL, resourceKeys: Set<URLResourceKey>) -> FileItem {
+    private func buildFileItem(from url: URL, resourceKeys: Set<URLResourceKey>, iconStyle: IconStyle = .system) -> FileItem {
         // Prefer the factory method on FileItem which handles all edge cases.
-        if let item = FileItem.create(from: url) {
+        if let item = FileItem.create(from: url, iconStyle: iconStyle) {
             return item
         }
 

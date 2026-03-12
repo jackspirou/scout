@@ -1,5 +1,11 @@
 import Cocoa
 
+// MARK: - BrowserContainerDelegate
+
+protocol BrowserContainerDelegate: AnyObject {
+    func browserContainer(_ container: BrowserContainerViewController, didSelectItems items: [FileItem])
+}
+
 // MARK: - BrowserContainerViewController
 
 final class BrowserContainerViewController: NSViewController {
@@ -7,17 +13,21 @@ final class BrowserContainerViewController: NSViewController {
 
     private let splitView = NSSplitView()
     private let clipboardManager: ClipboardManager
+    private var iconStyle: IconStyle
     private let leftPane: BrowserPaneViewController
     private let rightPane: BrowserPaneViewController
+
+    weak var delegate: BrowserContainerDelegate?
 
     private var isDualPane: Bool = false
 
     // MARK: - Init
 
-    init(clipboardManager: ClipboardManager = ClipboardManager()) {
+    init(clipboardManager: ClipboardManager = ClipboardManager(), iconStyle: IconStyle = .system) {
         self.clipboardManager = clipboardManager
-        leftPane = BrowserPaneViewController(clipboardManager: clipboardManager)
-        rightPane = BrowserPaneViewController(clipboardManager: clipboardManager)
+        self.iconStyle = iconStyle
+        leftPane = BrowserPaneViewController(clipboardManager: clipboardManager, iconStyle: iconStyle)
+        rightPane = BrowserPaneViewController(clipboardManager: clipboardManager, iconStyle: iconStyle)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -50,6 +60,9 @@ final class BrowserContainerViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        leftPane.delegate = self
+        rightPane.delegate = self
 
         // Start in single-pane mode
         rightPane.view.isHidden = true
@@ -117,6 +130,13 @@ final class BrowserContainerViewController: NSViewController {
         leftPaneIsActive ? leftPane : rightPane
     }
 
+    /// Updates the icon style on both panes.
+    func setIconStyle(_ style: IconStyle) {
+        iconStyle = style
+        leftPane.setIconStyle(style)
+        rightPane.setIconStyle(style)
+    }
+
     /// The inactive pane controller (nil if single-pane mode).
     func inactivePaneController() -> BrowserPaneViewController? {
         guard isDualPane else { return nil }
@@ -133,6 +153,10 @@ final class BrowserContainerViewController: NSViewController {
 
         let targetPane = activePaneController()
         view.window?.makeFirstResponder(targetPane.view)
+
+        // Notify delegate with new active pane's selection for preview update
+        let selectedItems = targetPane.selectedItems()
+        delegate?.browserContainer(self, didSelectItems: selectedItems)
     }
 
     private func updateActiveIndicator() {
@@ -183,5 +207,16 @@ extension BrowserContainerViewController: NSSplitViewDelegate {
         shouldHideDividerAt dividerIndex: Int
     ) -> Bool {
         !isDualPane
+    }
+}
+
+// MARK: - BrowserPaneDelegate
+
+extension BrowserContainerViewController: BrowserPaneDelegate {
+    func browserPane(_ pane: BrowserPaneViewController, didSelectItems items: [FileItem]) {
+        let isActivePane = (leftPaneIsActive && pane === leftPane)
+            || (!leftPaneIsActive && pane === rightPane)
+        guard isActivePane else { return }
+        delegate?.browserContainer(self, didSelectItems: items)
     }
 }

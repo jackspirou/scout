@@ -252,6 +252,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 modifiers: [.command, .shift]
             ),
             .separator,
+            .submenu("Icon Style", items: [
+                .item("System Icons", action: #selector(handleSystemIcons(_:))),
+                .item("Flat Icons", action: #selector(handleFlatIcons(_:))),
+            ]),
+            .separator,
             .item(
                 "Enter Full Screen",
                 action: #selector(NSWindow.toggleFullScreen(_:)),
@@ -368,5 +373,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func handleGoDownloads(_ sender: Any?) {
         // Will be dispatched to the active window controller via responder chain
+    }
+
+    // MARK: - Icon Style Actions
+
+    @objc private func handleSystemIcons(_ sender: Any?) {
+        setIconStyleForKeyWindow(.system)
+    }
+
+    @objc private func handleFlatIcons(_ sender: Any?) {
+        setIconStyleForKeyWindow(.flat)
+    }
+
+    private func setIconStyleForKeyWindow(_ style: IconStyle) {
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.setIconStyle(style)
+    }
+}
+
+// MARK: - NSMenuItemValidation
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(handleSystemIcons(_:)) {
+            let currentStyle = (NSApp.keyWindow?.windowController as? MainWindowController)?.iconStyle ?? .system
+            menuItem.state = currentStyle == .system ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(handleFlatIcons(_:)) {
+            let currentStyle = (NSApp.keyWindow?.windowController as? MainWindowController)?.iconStyle ?? .system
+            menuItem.state = currentStyle == .flat ? .on : .off
+            return true
+        }
+        return true
     }
 }

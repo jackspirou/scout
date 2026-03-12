@@ -34,6 +34,8 @@ private extension NSToolbarItem.Identifier {
 final class MainWindowController: NSWindowController {
     // MARK: - Properties
 
+    private(set) var iconStyle: IconStyle = .system
+
     private(set) var isDualPane: Bool = false {
         didSet { dualPaneDidChange() }
     }
@@ -42,12 +44,13 @@ final class MainWindowController: NSWindowController {
         didSet { previewDidChange() }
     }
 
+    /// Whether the user has explicitly closed the preview. Prevents auto-open after dismissal.
+    private var userDismissedPreview: Bool = false
+
     private let contentController = NSViewController()
     private let splitView = NSSplitView()
     private let browserContainer = BrowserContainerViewController()
-    private let previewViewController = NSViewController() // Placeholder for future preview implementation
-
-    private var isPreviewCollapsed: Bool = true
+    private let previewViewController = TextFilePreviewViewController()
     private var searchField: NSSearchField?
 
     // MARK: - Initialization
@@ -55,6 +58,8 @@ final class MainWindowController: NSWindowController {
     convenience init() {
         let window = Self.makeWindow()
         self.init(window: window)
+        self.iconStyle = PersistenceService().loadIconStyle()
+        browserContainer.setIconStyle(iconStyle)
         configureContentSplitView()
         configureToolbar()
     }
@@ -103,18 +108,23 @@ final class MainWindowController: NSWindowController {
         ])
 
         // Add browser container as the primary pane
+        browserContainer.delegate = self
         contentController.addChild(browserContainer)
         browserContainer.view.translatesAutoresizingMaskIntoConstraints = false
         splitView.addSubview(browserContainer.view)
 
-        // Add preview pane (hidden by default)
+        // Add preview pane (collapsed by default — divider pushed to far right)
         contentController.addChild(previewViewController)
-        previewViewController.view = NSView()
-        previewViewController.view.translatesAutoresizingMaskIntoConstraints = false
         splitView.addSubview(previewViewController.view)
-        previewViewController.view.isHidden = true
 
         window?.contentViewController = contentController
+
+        // Collapse preview pane by pushing divider to the far right.
+        // Defer so the split view has its final layout size.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.splitView.setPosition(self.splitView.bounds.width, ofDividerAt: 0)
+        }
     }
 
     // MARK: - Toolbar
@@ -134,11 +144,22 @@ final class MainWindowController: NSWindowController {
     }
 
     func togglePreview() {
+        if showPreview {
+            userDismissedPreview = true
+        } else {
+            userDismissedPreview = false
+        }
         showPreview.toggle()
     }
 
     func openNewTab() {
         browserContainer.activePaneController().addTab(url: FileManager.default.homeDirectoryForCurrentUser)
+    }
+
+    func setIconStyle(_ style: IconStyle) {
+        iconStyle = style
+        PersistenceService().saveIconStyle(style)
+        browserContainer.setIconStyle(style)
     }
 
     func closeCurrentTab() {
@@ -155,13 +176,39 @@ final class MainWindowController: NSWindowController {
     }
 
     private func previewDidChange() {
-        isPreviewCollapsed = !showPreview
+        if !showPreview {
+            previewViewController.clearPreview()
+        }
+
+        let totalWidth = splitView.bounds.width
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
             context.allowsImplicitAnimation = true
-            previewViewController.view.animator().isHidden = isPreviewCollapsed
-            splitView.adjustSubviews()
+
+            if showPreview {
+                // Expand: give preview 35% of width (min 250)
+                previewViewController.view.isHidden = false
+                let previewWidth = max(totalWidth * 0.35, 250)
+                splitView.setPosition(totalWidth - previewWidth, ofDividerAt: 0)
+            } else {
+                // Collapse: push divider to the far right edge
+                splitView.setPosition(totalWidth, ofDividerAt: 0)
+            }
+        }
+
+        // When opening preview, populate with current selection
+        if showPreview {
+            updatePreviewForCurrentSelection()
+        }
+    }
+
+    private func updatePreviewForCurrentSelection() {
+        let selectedItems = browserContainer.activePaneController().selectedItems()
+        if selectedItems.count == 1 {
+            previewViewController.previewItem(selectedItems.first)
+        } else {
+            previewViewController.clearPreview()
         }
     }
 }
@@ -326,7 +373,7 @@ extension MainWindowController: NSSplitViewDelegate {
     }
 
     func splitView(_ splitView: NSSplitView, shouldHideDividerAt dividerIndex: Int) -> Bool {
-        isPreviewCollapsed
+        !showPreview
     }
 }
 
@@ -338,5 +385,26 @@ extension MainWindowController: NSSearchFieldDelegate {
         let query = searchField.stringValue
         _ = query
         // Forward search query to the active browser pane
+    }
+}
+
+// MARK: - BrowserContainerDelegate
+
+extension MainWindowController: BrowserContainerDelegate {
+    func browserContainer(_ container: BrowserContainerViewController, didSelectItems items: [FileItem]) {
+        if items.count == 1 {
+            let item = items[0]
+
+            // Auto-open preview on first text file selection (unless user dismissed it)
+            if !showPreview, !userDismissedPreview, !item.isDirectory, item.isText {
+                showPreview = true
+            }
+
+            if showPreview {
+                previewViewController.previewItem(item)
+            }
+        } else if showPreview {
+            previewViewController.clearPreview()
+        }
     }
 }

@@ -7,9 +7,15 @@ let package = Package(
     platforms: [
         .macOS(.v14),
     ],
+    dependencies: [
+        .package(url: "https://github.com/smittytone/HighlighterSwift", from: "3.0.0"),
+    ],
     targets: [
         .executableTarget(
             name: "Scout",
+            dependencies: [
+                .product(name: "Highlighter", package: "HighlighterSwift"),
+            ],
             path: "Sources/Scout",
             exclude: [
                 "Resources/Info.plist",

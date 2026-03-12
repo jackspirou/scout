@@ -22,6 +22,7 @@ final class PathBarView: NSView {
 
     private var currentURL: URL?
     private var isEditing: Bool = false
+    private var iconStyle: IconStyle = .system
 
     // MARK: - Constants
 
@@ -126,6 +127,12 @@ final class PathBarView: NSView {
         rebuildComponents()
     }
 
+    /// Updates the icon style and rebuilds components to apply the new style.
+    func setIconStyle(_ style: IconStyle) {
+        iconStyle = style
+        rebuildComponents()
+    }
+
     // MARK: - Component Rendering
 
     private func rebuildComponents() {
@@ -174,7 +181,8 @@ final class PathBarView: NSView {
 
         // Folder icon
         let icon = NSImageView()
-        icon.image = NSWorkspace.shared.icon(forFile: url.path)
+        let resolved = FileTypeResolver.resolve(url: url, isDirectory: true, systemKind: nil, iconStyle: iconStyle)
+        icon.image = resolved.icon
         icon.imageScaling = .scaleProportionallyDown
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.widthAnchor.constraint(equalToConstant: Layout.iconSize).isActive = true

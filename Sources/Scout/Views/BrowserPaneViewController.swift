@@ -1,5 +1,11 @@
 import Cocoa
 
+// MARK: - BrowserPaneDelegate
+
+protocol BrowserPaneDelegate: AnyObject {
+    func browserPane(_ pane: BrowserPaneViewController, didSelectItems items: [FileItem])
+}
+
 // MARK: - BrowserTabState
 
 /// Represents the runtime state of a single browser tab, including navigation history.
@@ -24,10 +30,13 @@ struct BrowserTabState {
 final class BrowserPaneViewController: NSViewController {
     // MARK: - Properties
 
+    weak var delegate: BrowserPaneDelegate?
+
     private var tabs: [BrowserTabState] = []
     private(set) var activeTabIndex: Int = 0
     private var isActive: Bool = false
 
+    private var iconStyle: IconStyle
     private let tabBar = NSStackView()
     private let pathBarView = PathBarView()
     private let fileListViewController: FileListViewController
@@ -36,8 +45,9 @@ final class BrowserPaneViewController: NSViewController {
 
     // MARK: - Init
 
-    init(clipboardManager: ClipboardManager) {
-        fileListViewController = FileListViewController(clipboardManager: clipboardManager)
+    init(clipboardManager: ClipboardManager, iconStyle: IconStyle = .system) {
+        self.iconStyle = iconStyle
+        fileListViewController = FileListViewController(clipboardManager: clipboardManager, iconStyle: iconStyle)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -94,8 +104,14 @@ final class BrowserPaneViewController: NSViewController {
         addTab(url: homeURL)
 
         pathBarView.delegate = self
+        pathBarView.setIconStyle(iconStyle)
         fileListViewController.delegate = self
         directoryMonitor.delegate = self
+    }
+
+    /// Returns the currently selected items in the file list.
+    func selectedItems() -> [FileItem] {
+        fileListViewController.selectedItems()
     }
 
     // MARK: - Configuration
@@ -263,6 +279,13 @@ final class BrowserPaneViewController: NSViewController {
         activeIndicatorBar.isHidden = !active
     }
 
+    /// Updates the icon style and reloads the file list and path bar.
+    func setIconStyle(_ style: IconStyle) {
+        iconStyle = style
+        pathBarView.setIconStyle(style)
+        fileListViewController.setIconStyle(style)
+    }
+
     // MARK: - Keyboard Navigation
 
     override func keyDown(with event: NSEvent) {
@@ -365,6 +388,8 @@ final class BrowserPaneViewController: NSViewController {
         let url = tabs[activeTabIndex].url
         pathBarView.update(with: url)
         fileListViewController.loadDirectory(at: url)
+        // Selection is cleared on directory reload — notify delegate
+        delegate?.browserPane(self, didSelectItems: [])
         // Directory monitoring starts in fileListViewDidFinishLoading once items are loaded.
     }
 
@@ -394,6 +419,7 @@ extension BrowserPaneViewController: PathBarDelegate {
 extension BrowserPaneViewController: FileListViewDelegate {
     func fileListView(_ controller: FileListViewController, didSelectItems items: [FileItem]) {
         updateStatusBar(itemCount: controller.itemCount, selectedCount: items.count)
+        delegate?.browserPane(self, didSelectItems: items)
     }
 
     func fileListView(_ controller: FileListViewController, didOpenItem item: FileItem) {

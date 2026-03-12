@@ -38,6 +38,7 @@ final class FileListViewController: NSViewController {
     private let fileSystemService = FileSystemService()
     private let clipboardManager: ClipboardManager
 
+    private var iconStyle: IconStyle
     private var allItems: [FileItem] = []
     private var sortedItems: [FileItem] = []
     private var urlToIndex: [URL: Int] = [:]
@@ -52,7 +53,8 @@ final class FileListViewController: NSViewController {
 
     // MARK: - Init
 
-    init(clipboardManager: ClipboardManager = ClipboardManager()) {
+    init(clipboardManager: ClipboardManager = ClipboardManager(), iconStyle: IconStyle = .system) {
+        self.iconStyle = iconStyle
         self.clipboardManager = clipboardManager
         super.init(nibName: nil, bundle: nil)
     }
@@ -183,10 +185,11 @@ final class FileListViewController: NSViewController {
         currentDirectoryURL = url
         loadingTask?.cancel()
 
+        let style = iconStyle
         loadingTask = Task { [weak self] in
             guard let self else { return }
 
-            let items = await Self.loadItems(at: url)
+            let items = await Self.loadItems(at: url, iconStyle: style)
 
             guard !Task.isCancelled else { return }
 
@@ -196,6 +199,14 @@ final class FileListViewController: NSViewController {
                 self.tableView.reloadData()
                 self.delegate?.fileListViewDidFinishLoading(self, itemCount: self.sortedItems.count)
             }
+        }
+    }
+
+    /// Updates the icon style and reloads the current directory if one is loaded.
+    func setIconStyle(_ style: IconStyle) {
+        iconStyle = style
+        if let url = currentDirectoryURL {
+            loadDirectory(at: url)
         }
     }
 
@@ -330,7 +341,7 @@ final class FileListViewController: NSViewController {
 
     // MARK: - Async Directory Loading
 
-    private static func loadItems(at url: URL) async -> [FileItem] {
+    private static func loadItems(at url: URL, iconStyle: IconStyle = .system) async -> [FileItem] {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let fm = FileManager.default
@@ -341,7 +352,6 @@ final class FileListViewController: NSViewController {
                         .fileSizeKey,
                         .isDirectoryKey,
                         .localizedTypeDescriptionKey,
-                        .effectiveIconKey,
                     ],
                     options: [.skipsHiddenFiles]
                 ) else {
@@ -349,7 +359,7 @@ final class FileListViewController: NSViewController {
                     return
                 }
 
-                let items = urls.compactMap { FileItem.create(from: $0) }
+                let items = urls.compactMap { FileItem.create(from: $0, iconStyle: iconStyle) }
                 continuation.resume(returning: items)
             }
         }
@@ -464,7 +474,7 @@ final class FileListViewController: NSViewController {
                 // Skip if already present (avoid duplicates).
                 guard urlToIndex[url] == nil else { continue }
 
-                guard let newItem = FileItem.create(from: url) else { continue }
+                guard let newItem = FileItem.create(from: url, iconStyle: iconStyle) else { continue }
                 // Skip hidden files to match loadDirectory behavior.
                 if newItem.isHidden { continue }
 
@@ -488,7 +498,7 @@ final class FileListViewController: NSViewController {
             for url in urls {
                 guard let index = urlToIndex[url] else { continue }
                 // Refresh metadata by creating a new FileItem.
-                guard let refreshedItem = FileItem.create(from: url) else { continue }
+                guard let refreshedItem = FileItem.create(from: url, iconStyle: iconStyle) else { continue }
                 // Skip hidden files.
                 if refreshedItem.isHidden { continue }
 
@@ -662,7 +672,7 @@ final class FileListViewController: NSViewController {
         alert.beginSheetModal(for: window)
     }
 
-    private func selectedItems() -> [FileItem] {
+    func selectedItems() -> [FileItem] {
         tableView.selectedRowIndexes.compactMap { index in
             sortedItems.indices.contains(index) ? sortedItems[index] : nil
         }

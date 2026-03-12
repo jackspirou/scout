@@ -39,6 +39,7 @@ final class PersistenceService: Sendable {
         static let viewSettingsPrefix = "viewSettings_"
         static let lastSession = "lastSession"
         static let recentLocations = "recentLocations"
+        static let iconStyle = "scout.iconStyle"
     }
 
     private enum FileName {
@@ -213,6 +214,18 @@ final class PersistenceService: Sendable {
 
             return url
         }
+    }
+
+    // MARK: - Icon Style
+
+    func saveIconStyle(_ style: IconStyle) {
+        defaults.set(style.rawValue, forKey: StoreKey.iconStyle)
+    }
+
+    func loadIconStyle() -> IconStyle {
+        guard let raw = defaults.string(forKey: StoreKey.iconStyle),
+              let style = IconStyle(rawValue: raw) else { return .system }
+        return style
     }
 
     // MARK: - Private Helpers

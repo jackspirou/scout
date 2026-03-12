@@ -103,12 +103,12 @@ actor SearchService {
     // MARK: - Fuzzy Match
 
     /// Performs fuzzy filename matching within a directory and returns scored results.
-    func fuzzyMatch(query: String, in directory: URL) async -> [FileItem] {
+    func fuzzyMatch(query: String, in directory: URL, iconStyle: IconStyle = .system) async -> [FileItem] {
         guard !query.isEmpty else { return [] }
 
         let items: [FileItem]
         do {
-            items = try await fileSystemService.contentsOfDirectory(at: directory)
+            items = try await fileSystemService.contentsOfDirectory(at: directory, iconStyle: iconStyle)
         } catch {
             return []
         }

@@ -1,5 +1,4 @@
 import AppKit
-import UniformTypeIdentifiers
 
 /// Represents a single file system item with its metadata.
 struct FileItem: Identifiable, Hashable {
@@ -21,6 +20,8 @@ struct FileItem: Identifiable, Hashable {
     let isPackage: Bool
     let contentType: String?
     let permissions: UInt16
+    let isText: Bool
+    let highlightrLanguage: String?
 
     // MARK: - Identifiable
 
@@ -66,6 +67,9 @@ struct FileItem: Identifiable, Hashable {
         creationDate: Date? = nil,
         kind: String? = nil,
         icon: NSImage? = nil,
+        isText: Bool? = nil,
+        highlightrLanguage: String? = nil,
+        iconStyle: IconStyle = .system,
         contentType: String? = nil,
         tags: [String] = [],
         permissions: UInt16 = 0o644
@@ -79,11 +83,23 @@ struct FileItem: Identifiable, Hashable {
         self.size = size
         self.modificationDate = modificationDate
         self.creationDate = creationDate
-        self.kind = kind ?? (isDirectory ? "Folder" : "Document")
-        self.icon = icon ?? NSWorkspace.shared.icon(forFile: url.path)
         self.contentType = contentType
         self.tags = tags
         self.permissions = permissions
+
+        // Resolve file type for any missing properties.
+        if icon == nil || kind == nil || isText == nil {
+            let resolved = FileTypeResolver.resolve(url: url, isDirectory: isDirectory, systemKind: kind, iconStyle: iconStyle)
+            self.kind = kind ?? resolved.kind
+            self.icon = icon ?? resolved.icon
+            self.isText = isText ?? resolved.isText
+            self.highlightrLanguage = highlightrLanguage ?? resolved.highlightrLanguage
+        } else {
+            self.kind = kind!
+            self.icon = icon!
+            self.isText = isText!
+            self.highlightrLanguage = highlightrLanguage
+        }
     }
 
     // MARK: - Hashable
@@ -100,7 +116,7 @@ struct FileItem: Identifiable, Hashable {
 
     /// Creates a `FileItem` by reading metadata from the file system at the given URL.
     /// Returns `nil` if the URL cannot be accessed.
-    static func create(from url: URL) -> FileItem? {
+    static func create(from url: URL, iconStyle: IconStyle = .system) -> FileItem? {
         let fileManager = FileManager.default
 
         let resourceKeys: Set<URLResourceKey> = [
@@ -111,7 +127,6 @@ struct FileItem: Identifiable, Hashable {
             .contentModificationDateKey,
             .creationDateKey,
             .localizedTypeDescriptionKey,
-            .effectiveIconKey,
             .isHiddenKey,
             .isSymbolicLinkKey,
             .isPackageKey,
@@ -125,6 +140,7 @@ struct FileItem: Identifiable, Hashable {
             let exists = fileManager.fileExists(atPath: url.path, isDirectory: &isDir)
             guard exists else { return nil }
 
+            let resolved = FileTypeResolver.resolve(url: url, isDirectory: isDir.boolValue, systemKind: nil, iconStyle: iconStyle)
             return FileItem(
                 url: url,
                 name: name,
@@ -133,15 +149,23 @@ struct FileItem: Identifiable, Hashable {
                 size: nil,
                 modificationDate: nil,
                 creationDate: nil,
-                kind: isDir.boolValue ? "Folder" : "Document",
-                icon: NSWorkspace.shared.icon(forFile: url.path),
+                kind: resolved.kind,
+                icon: resolved.icon,
+                isText: resolved.isText,
+                highlightrLanguage: resolved.highlightrLanguage,
+                iconStyle: iconStyle,
                 tags: []
             )
         }
 
         let isDirectory = resourceValues.isDirectory ?? false
         let size: Int64? = isDirectory ? nil : Int64(resourceValues.totalFileSize ?? resourceValues.fileSize ?? 0)
-        let icon = (resourceValues.effectiveIcon as? NSImage) ?? NSWorkspace.shared.icon(forFile: url.path)
+        let resolved = FileTypeResolver.resolve(
+            url: url,
+            isDirectory: isDirectory,
+            systemKind: resourceValues.localizedTypeDescription,
+            iconStyle: iconStyle
+        )
 
         return FileItem(
             url: url,
@@ -153,8 +177,11 @@ struct FileItem: Identifiable, Hashable {
             size: size,
             modificationDate: resourceValues.contentModificationDate,
             creationDate: resourceValues.creationDate,
-            kind: resourceValues.localizedTypeDescription ?? (isDirectory ? "Folder" : "Document"),
-            icon: icon,
+            kind: resolved.kind,
+            icon: resolved.icon,
+            isText: resolved.isText,
+            highlightrLanguage: resolved.highlightrLanguage,
+            iconStyle: iconStyle,
             contentType: resourceValues.contentType?.identifier,
             tags: resourceValues.tagNames ?? []
         )
