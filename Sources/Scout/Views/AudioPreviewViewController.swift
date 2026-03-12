@@ -22,7 +22,7 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
     private var waveformContainerView: NSView!
     private var waveformView: WaveformView!
     private var realtimeWaveView: RealtimeWaveView!
-    private var showingRealtimeWave = false
+    private var showingRealtimeWave = true
     private let audioLevelTap = AudioLevelTap()
 
     private var transportView: NSView!
@@ -136,7 +136,7 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
 
         realtimeWaveView = RealtimeWaveView()
         realtimeWaveView.translatesAutoresizingMaskIntoConstraints = false
-        realtimeWaveView.isHidden = true
+        realtimeWaveView.isHidden = false
         realtimeWaveView.onTap = { [weak self] in
             self?.toggleWaveformMode()
         }
@@ -192,7 +192,7 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
 
         // Waveform mode toggle button
         waveformToggleButton = NSButton(
-            image: NSImage(systemSymbolName: "waveform", accessibilityDescription: "Toggle waveform")!,
+            image: NSImage(systemSymbolName: "waveform.path", accessibilityDescription: "Toggle waveform")!,
             target: self, action: #selector(toggleWaveformMode)
         )
         waveformToggleButton.translatesAutoresizingMaskIntoConstraints = false
@@ -279,10 +279,10 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
         totalTimeLabel.stringValue = "0:00"
         updatePlayPauseIcon(playing: false)
 
-        // Reset to static waveform view
-        showingRealtimeWave = false
-        waveformView.isHidden = false
-        realtimeWaveView.isHidden = true
+        // Default to realtime waveform view
+        showingRealtimeWave = true
+        waveformView.isHidden = true
+        realtimeWaveView.isHidden = false
 
         headerView.update(with: item)
 
@@ -337,7 +337,6 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
     private func stopPlayback() {
         player?.pause()
         audioLevelTap.remove()
-        realtimeWaveView.stopAnimating()
         removeTimeObserver()
         statusObservation?.invalidate()
         statusObservation = nil
@@ -417,11 +416,6 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
 
     @objc private func toggleWaveformMode() {
         showingRealtimeWave.toggle()
-        if showingRealtimeWave {
-            realtimeWaveView.startAnimating()
-        } else {
-            realtimeWaveView.stopAnimating()
-        }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.2
             waveformView.animator().isHidden = showingRealtimeWave

@@ -5,20 +5,16 @@ import MediaToolbox
 // MARK: - Constants
 
 /// Number of frequency bands for the spectrum visualization.
-/// 192 bands — 64 per wave (bass/mids/treble) for high-fidelity curves
-/// on retina displays. Within the comfortable range for a 2048-point FFT
-/// (1024 bins, ~21 Hz resolution at 44.1 kHz).
-let kSpectrumBandCount = 192
+/// 96 bands — 32 per wave (bass/mids/treble) for high-fidelity curves.
+let kSpectrumBandCount = 96
 
 /// FFT window size. Must be a power of 2.
-/// 2048 gives ~21 Hz frequency resolution at 44.1 kHz with ~46 ms latency,
-/// matching Voxengo SPAN's default. Doubles bass resolution vs 1024.
-private let kFFTSize = 2048
+/// 1024 gives good frequency resolution at typical sample rates.
+private let kFFTSize = 1024
 
 /// Decibel floor — anything below is treated as silence.
-/// -60 dB gives ~57 dB of visible dynamic range, matching professional
-/// spectrum analyzers (SPAN uses 54 dB, audioMotion uses 60 dB).
-private let kMinDB: Float = -60
+/// Narrower range (-50 to -5) maps typical music dynamics to the full 0...1 range.
+private let kMinDB: Float = -40
 
 /// Decibel ceiling — clips at this level.
 private let kMaxDB: Float = -3
@@ -46,9 +42,6 @@ private final class TapContext {
     // Frequency band bin ranges (logarithmically spaced)
     var bands: [(low: Int, high: Int)]
 
-    // Pre-computed spectral tilt multipliers — avoids log2f/powf on the audio thread.
-    var tiltMultipliers: [Float]
-
     init() {
         let n = kFFTSize
         halfSize = n / 2
@@ -69,19 +62,17 @@ private final class TapContext {
         bands = Self.logarithmicBands(
             count: kSpectrumBandCount, fftSize: n, sampleRate: 44100
         )
-        tiltMultipliers = Self.computeTiltMultipliers(bands: bands)
     }
 
     deinit {
         vDSP_destroy_fftsetup(fftSetup)
     }
 
-    /// Recomputes frequency band edges and tilt multipliers for the actual sample rate.
+    /// Recomputes frequency band edges for the actual sample rate.
     func updateSampleRate(_ sampleRate: Double) {
         bands = Self.logarithmicBands(
             count: kSpectrumBandCount, fftSize: kFFTSize, sampleRate: Float(sampleRate)
         )
-        tiltMultipliers = Self.computeTiltMultipliers(bands: bands)
     }
 
     /// Creates logarithmically spaced frequency band bin ranges.
@@ -103,19 +94,6 @@ private final class TapContext {
             result.append((low: lowBin, high: highBin))
         }
         return result
-    }
-
-    /// Pre-computes spectral tilt multipliers (+4.5 dB/octave) for each band.
-    /// Called once at init and when sample rate changes, so the audio thread
-    /// only does a single multiply per band instead of log2f + powf.
-    static func computeTiltMultipliers(bands: [(low: Int, high: Int)]) -> [Float] {
-        let refBin = max(Float(bands[0].low), 1.0)
-        return bands.map { band in
-            let centerBin = Float(band.low + band.high) / 2.0
-            let octaves = log2f(max(centerBin / refBin, 1.0))
-            let tiltDB: Float = 4.5 * octaves
-            return powf(10.0, tiltDB / 20.0)
-        }
     }
 }
 
@@ -298,10 +276,18 @@ private let tapProcess: MTAudioProcessingTapProcessCallback = {
             }
         }
 
-        // Apply pre-computed spectral tilt compensation (+4.5 dB/octave).
-        // Multipliers are computed once at init/prepare, avoiding log2f/powf
-        // on the real-time audio thread.
-        let compensated = maxMag * context.tiltMultipliers[i]
+        // Spectral tilt compensation (+3 dB/octave). Natural audio follows
+        // a pink noise spectrum (~-3 dB/octave), so higher frequencies have
+        // inherently less energy. Professional spectrum analyzers apply a
+        // rising slope to compensate, giving equal visual weight across the
+        // spectrum. The tilt is computed as the band's center bin relative
+        // to the lowest bin (band 0), measured in octaves.
+        let centerBin = Float(lo + hi) / 2.0
+        let refBin = max(Float(context.bands[0].low), 1.0)
+        let octaves = log2f(max(centerBin / refBin, 1.0))
+        let tiltDB: Float = 3.0 * octaves
+        let tiltLinear = powf(10.0, tiltDB / 20.0)
+        let compensated = maxMag * tiltLinear
 
         let db = 20 * log10f(max(compensated, 1e-7))
         let linear = max(0, min(1, (db - kMinDB) / dbRange))
