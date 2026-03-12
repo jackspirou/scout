@@ -142,32 +142,14 @@ enum MediaMetadataExtractor {
             }
 
             // Audio track info
-            var audioCodec: String?
-            var audioBitrate: Double?
-            var sampleRate: Double?
-            var channelCount: Int?
-
-            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-            if let audioTrack = audioTracks.first {
-                audioBitrate = Double(try await audioTrack.load(.estimatedDataRate))
-
-                let formatDescriptions = try await audioTrack.load(.formatDescriptions)
-                if let desc = formatDescriptions.first {
-                    audioCodec = codecName(from: CMFormatDescriptionGetMediaSubType(desc))
-
-                    if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee {
-                        sampleRate = asbd.mSampleRate
-                        channelCount = Int(asbd.mChannelsPerFrame)
-                    }
-                }
-            }
+            let audioInfo = try await extractAudioTrackInfo(from: asset)
 
             // Total bitrate
             var totalBitrate: Double?
-            if let vb = videoBitrate, let ab = audioBitrate {
+            if let vb = videoBitrate, let ab = audioInfo.bitrate {
                 totalBitrate = vb + ab
             } else {
-                totalBitrate = videoBitrate ?? audioBitrate
+                totalBitrate = videoBitrate ?? audioInfo.bitrate
             }
 
             return VideoMetadata(
@@ -176,16 +158,159 @@ enum MediaMetadataExtractor {
                 frameRate: frameRate,
                 videoCodec: videoCodec,
                 videoBitrate: videoBitrate,
-                audioCodec: audioCodec,
-                audioBitrate: audioBitrate,
-                sampleRate: sampleRate,
-                channelCount: channelCount,
+                audioCodec: audioInfo.codec,
+                audioBitrate: audioInfo.bitrate,
+                sampleRate: audioInfo.sampleRate,
+                channelCount: audioInfo.channelCount,
                 duration: durationSeconds,
                 totalBitrate: totalBitrate
             )
         } catch {
             return nil
         }
+    }
+
+    /// Extracts audio metadata including ID3/iTunes tags from the given URL
+    /// using AVAsset. Returns nil if the file cannot be loaded or has no
+    /// valid audio duration.
+    static func extractAudioMetadata(from url: URL) async -> AudioMetadata? {
+        let asset = AVURLAsset(url: url)
+
+        do {
+            let duration = try await asset.load(.duration)
+            let durationSeconds = CMTimeGetSeconds(duration)
+            guard durationSeconds.isFinite, durationSeconds > 0 else { return nil }
+
+            // Audio track info
+            let audioInfo = try await extractAudioTrackInfo(from: asset)
+
+            // Common metadata tags (artist, album, title, artwork, date)
+            var artist: String?
+            var albumName: String?
+            var trackTitle: String?
+            var genre: String?
+            var releaseYear: String?
+            var albumArt: Data?
+
+            let commonMetadata = try await asset.load(.commonMetadata)
+            for item in commonMetadata {
+                guard let key = item.commonKey else { continue }
+                switch key {
+                case .commonKeyArtist:
+                    artist = try? await item.load(.stringValue)
+                case .commonKeyAlbumName:
+                    albumName = try? await item.load(.stringValue)
+                case .commonKeyTitle:
+                    trackTitle = try? await item.load(.stringValue)
+                case .commonKeyArtwork:
+                    albumArt = try? await item.load(.dataValue)
+                case .commonKeyCreationDate:
+                    releaseYear = try? await item.load(.stringValue)
+                default:
+                    break
+                }
+            }
+
+            // ID3 + iTunes metadata (track number, BPM, genre, composer, copyright)
+            var trackNumber: Int?
+            var bpm: Int?
+            var composer: String?
+            var copyright: String?
+
+            let allMetadata = try await asset.load(.metadata)
+
+            trackNumber = await loadInt(from: allMetadata, identifier: .id3MetadataTrackNumber)
+            if trackNumber == nil {
+                trackNumber = await loadInt(from: allMetadata, identifier: .iTunesMetadataTrackNumber)
+            }
+
+            bpm = await loadInt(from: allMetadata, identifier: .id3MetadataBeatsPerMinute)
+
+            if genre == nil {
+                genre = await loadString(from: allMetadata, identifier: .id3MetadataContentType)
+            }
+
+            composer = await loadString(from: allMetadata, identifier: .id3MetadataComposer)
+            copyright = await loadString(from: allMetadata, identifier: .id3MetadataCopyright)
+
+            // iTunes fallbacks for m4a/aac files
+            if artist == nil {
+                artist = await loadString(from: allMetadata, identifier: .iTunesMetadataArtist)
+            }
+            if albumName == nil {
+                albumName = await loadString(from: allMetadata, identifier: .iTunesMetadataAlbum)
+            }
+
+            return AudioMetadata(
+                duration: durationSeconds,
+                audioCodec: audioInfo.codec,
+                audioBitrate: audioInfo.bitrate,
+                sampleRate: audioInfo.sampleRate,
+                channelCount: audioInfo.channelCount,
+                artist: artist,
+                albumName: albumName,
+                trackTitle: trackTitle,
+                trackNumber: trackNumber,
+                genre: genre,
+                releaseYear: releaseYear,
+                composer: composer,
+                albumArt: albumArt,
+                bpm: bpm,
+                copyright: copyright
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Audio Track Info
+
+    /// Extracted audio track properties.
+    private struct AudioTrackInfo {
+        var codec: String?
+        var bitrate: Double?
+        var sampleRate: Double?
+        var channelCount: Int?
+    }
+
+    /// Extracts codec, bitrate, sample rate, and channel count from the first audio track.
+    private static func extractAudioTrackInfo(from asset: AVURLAsset) async throws -> AudioTrackInfo {
+        var info = AudioTrackInfo()
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        if let audioTrack = audioTracks.first {
+            info.bitrate = Double(try await audioTrack.load(.estimatedDataRate))
+
+            let formatDescriptions = try await audioTrack.load(.formatDescriptions)
+            if let desc = formatDescriptions.first {
+                info.codec = codecName(from: CMFormatDescriptionGetMediaSubType(desc))
+
+                if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee {
+                    info.sampleRate = asbd.mSampleRate
+                    info.channelCount = Int(asbd.mChannelsPerFrame)
+                }
+            }
+        }
+        return info
+    }
+
+    // MARK: - Metadata Helpers
+
+    /// Extracts a string value from metadata items matching the given identifier.
+    private static func loadString(
+        from items: [AVMetadataItem],
+        identifier: AVMetadataIdentifier
+    ) async -> String? {
+        let filtered = AVMetadataItem.metadataItems(from: items, filteredByIdentifier: identifier)
+        return try? await filtered.first?.load(.stringValue)
+    }
+
+    /// Extracts an integer value from metadata items matching the given identifier.
+    private static func loadInt(
+        from items: [AVMetadataItem],
+        identifier: AVMetadataIdentifier
+    ) async -> Int? {
+        let filtered = AVMetadataItem.metadataItems(from: items, filteredByIdentifier: identifier)
+        return try? await filtered.first?.load(.numberValue) as? Int
     }
 
     // MARK: - Codec Name Mapping

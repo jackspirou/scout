@@ -4,7 +4,7 @@ import AppKit
 
 /// Displays a directory's contents as an expandable tree using NSOutlineView.
 /// Lazy-loads children on expand, caches results, and shows a collapsible metadata header.
-final class DirectoryPreviewViewController: NSViewController {
+final class DirectoryPreviewViewController: NSViewController, PreviewChild {
     // MARK: - Properties
 
     private let headerView = PreviewHeaderView()

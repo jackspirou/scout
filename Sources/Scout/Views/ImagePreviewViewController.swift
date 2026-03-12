@@ -5,7 +5,7 @@ import AppKit
 /// Displays an image file with a collapsible metadata header, media info section,
 /// and zoomable/pannable image canvas.
 /// Supports zoom (pinch, scroll-wheel, double-click) and drag-to-pan.
-final class ImagePreviewViewController: NSViewController {
+final class ImagePreviewViewController: NSViewController, PreviewChild {
     // MARK: - Properties
 
     private let headerView = PreviewHeaderView()

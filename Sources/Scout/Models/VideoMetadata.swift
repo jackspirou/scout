@@ -28,17 +28,7 @@ struct VideoMetadata {
     var hasAudio: Bool { audioCodec != nil }
 
     /// Duration formatted as "H:MM:SS" or "M:SS".
-    var formattedDuration: String {
-        let total = Int(round(duration))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
-    }
+    var formattedDuration: String { duration.formattedDuration }
 
     /// Resolution as "1920 x 1080".
     var formattedResolution: String? {
@@ -61,14 +51,7 @@ struct VideoMetadata {
 
     /// Channels as "Mono", "Stereo", or "N channels".
     var formattedChannels: String? {
-        guard let count = channelCount else { return nil }
-        switch count {
-        case 1: return "Mono"
-        case 2: return "Stereo"
-        case 6: return "5.1 Surround"
-        case 8: return "7.1 Surround"
-        default: return "\(count) channels"
-        }
+        channelCount?.formattedChannelDescription
     }
 
     private func gcd(_ a: Int, _ b: Int) -> Int {

@@ -5,7 +5,7 @@ import Highlighter
 
 /// Displays read-only syntax-highlighted text content with line numbers and a file metadata header.
 /// Designed to be embedded as a child view controller within PreviewViewController.
-final class TextFilePreviewViewController: NSViewController {
+final class TextFilePreviewViewController: NSViewController, PreviewChild {
     // MARK: - Properties
 
     private let headerView = PreviewHeaderView()

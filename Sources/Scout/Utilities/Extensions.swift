@@ -84,6 +84,38 @@ extension UInt16 {
     }
 }
 
+// MARK: - Int Extension (Audio Channels)
+
+extension Int {
+    /// Formats a channel count as "Mono", "Stereo", "5.1 Surround", "7.1 Surround", or "N channels".
+    var formattedChannelDescription: String {
+        switch self {
+        case 1: return "Mono"
+        case 2: return "Stereo"
+        case 6: return "5.1 Surround"
+        case 8: return "7.1 Surround"
+        default: return "\(self) channels"
+        }
+    }
+}
+
+// MARK: - TimeInterval Extension
+
+extension TimeInterval {
+    /// Formats a duration as "H:MM:SS" or "M:SS".
+    var formattedDuration: String {
+        let total = max(0, Int(self.rounded()))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
 // MARK: - Date Extension
 
 extension Date {

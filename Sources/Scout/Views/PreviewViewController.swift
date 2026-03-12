@@ -1,5 +1,13 @@
 import AppKit
 
+// MARK: - PreviewChild Protocol
+
+/// Protocol for preview child view controllers that can display a file item and clear their state.
+protocol PreviewChild: NSViewController {
+    func displayItem(_ item: FileItem)
+    func clear()
+}
+
 // MARK: - PreviewViewController
 
 /// Container view controller for the preview pane. Swaps between content-specific
@@ -15,6 +23,7 @@ final class PreviewViewController: NSViewController {
     private let imagePreview = ImagePreviewViewController()
     private let pdfPreview = PDFPreviewViewController()
     private let videoPreview = VideoPreviewViewController()
+    private let audioPreview = AudioPreviewViewController()
     private let directoryPreview = DirectoryPreviewViewController()
     private weak var activeChild: NSViewController?
 
@@ -73,9 +82,12 @@ final class PreviewViewController: NSViewController {
         } else if item.isPDF {
             showChild(pdfPreview)
             pdfPreview.displayItem(item)
-        } else if item.isVideo || item.isAudio {
+        } else if item.isVideo {
             showChild(videoPreview)
             videoPreview.displayItem(item)
+        } else if item.isAudio {
+            showChild(audioPreview)
+            audioPreview.displayItem(item)
         } else if item.isImage {
             showChild(imagePreview)
             imagePreview.displayItem(item)
@@ -92,7 +104,7 @@ final class PreviewViewController: NSViewController {
 
     /// Clears the preview and shows the default placeholder.
     func clearPreview() {
-        clearActiveChild()
+        removeActiveChild()
         contentContainer.isHidden = true
         placeholderLabel.stringValue = "Select a file to preview"
         placeholderLabel.isHidden = false
@@ -121,30 +133,11 @@ final class PreviewViewController: NSViewController {
         activeChild = child
     }
 
-    private func clearActiveChild() {
-        guard let child = activeChild else { return }
-        clearChild(child)
-        child.view.removeFromSuperview()
-        child.removeFromParent()
-        activeChild = nil
-    }
-
     private func removeActiveChild() {
         guard let child = activeChild else { return }
-        clearChild(child)
+        (child as? PreviewChild)?.clear()
         child.view.removeFromSuperview()
         child.removeFromParent()
         activeChild = nil
-    }
-
-    private func clearChild(_ child: NSViewController) {
-        switch child {
-        case let vc as TextFilePreviewViewController: vc.clear()
-        case let vc as ImagePreviewViewController: vc.clear()
-        case let vc as PDFPreviewViewController: vc.clear()
-        case let vc as VideoPreviewViewController: vc.clear()
-        case let vc as DirectoryPreviewViewController: vc.clear()
-        default: break
-        }
     }
 }

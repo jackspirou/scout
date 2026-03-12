@@ -5,7 +5,7 @@ import PDFKit
 
 /// Displays a PDF file with a collapsible metadata header and a native PDFView.
 /// Supports zoom, scrolling, text selection, and search via PDFKit.
-final class PDFPreviewViewController: NSViewController {
+final class PDFPreviewViewController: NSViewController, PreviewChild {
     // MARK: - Properties
 
     private let headerView = PreviewHeaderView()

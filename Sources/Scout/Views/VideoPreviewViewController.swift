@@ -6,7 +6,7 @@ import AVKit
 /// Displays video and audio files with native playback controls and a collapsible
 /// metadata header. Uses AVPlayerView which provides transport controls, scrubbing,
 /// volume, fullscreen, and PiP for video, and album art display for audio.
-final class VideoPreviewViewController: NSViewController {
+final class VideoPreviewViewController: NSViewController, PreviewChild {
     // MARK: - Properties
 
     private let headerView = PreviewHeaderView()
