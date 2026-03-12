@@ -433,11 +433,16 @@ final class TextFilePreviewViewController: NSViewController {
         do {
             // Read and decode off the main thread.
             let (text, fileSize) = try await Task.detached {
-                let fileData = try Data(contentsOf: url, options: .mappedIfSafe)
-                let fileSize = Int64(fileData.count)
-                let data = fileData.count > Layout.maxFileSize
-                    ? fileData.prefix(Layout.maxFileSize)
-                    : fileData
+                // Use FileHandle to read only what we need, avoiding full mmap of large files.
+                let handle = try FileHandle(forReadingFrom: url)
+                defer { try? handle.close() }
+
+                let fileSize = Int64(handle.seekToEndOfFile())
+                handle.seek(toFileOffset: 0)
+
+                let bytesToRead = min(Int(fileSize), Layout.maxFileSize)
+                let data = handle.readData(ofLength: bytesToRead)
+
                 return (Self.decodeText(from: data), fileSize)
             }.value
 

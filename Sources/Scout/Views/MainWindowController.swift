@@ -58,7 +58,7 @@ final class MainWindowController: NSWindowController {
     convenience init() {
         let window = Self.makeWindow()
         self.init(window: window)
-        self.iconStyle = PersistenceService().loadIconStyle()
+        self.iconStyle = PersistenceService.shared.loadIconStyle()
         browserContainer.setIconStyle(iconStyle)
         configureContentSplitView()
         configureToolbar()
@@ -158,7 +158,7 @@ final class MainWindowController: NSWindowController {
 
     func setIconStyle(_ style: IconStyle) {
         iconStyle = style
-        PersistenceService().saveIconStyle(style)
+        PersistenceService.shared.saveIconStyle(style)
         browserContainer.setIconStyle(style)
     }
 

@@ -39,7 +39,7 @@ enum SearchError: LocalizedError {
 // MARK: - SearchService
 
 /// Actor-based service for file search using Spotlight and custom fuzzy matching.
-actor SearchService {
+actor SearchService: SearchServiceProtocol {
     private var activeQuery: NSMetadataQuery?
     private var activeObserver: SpotlightObserver?
     private var debounceTask: Task<Void, Never>?
@@ -103,12 +103,12 @@ actor SearchService {
     // MARK: - Fuzzy Match
 
     /// Performs fuzzy filename matching within a directory and returns scored results.
-    func fuzzyMatch(query: String, in directory: URL, iconStyle: IconStyle = .system) async -> [FileItem] {
+    func fuzzyMatch(query: String, in directory: URL) async -> [FileItem] {
         guard !query.isEmpty else { return [] }
 
         let items: [FileItem]
         do {
-            items = try await fileSystemService.contentsOfDirectory(at: directory, iconStyle: iconStyle)
+            items = try await fileSystemService.contentsOfDirectory(at: directory)
         } catch {
             return []
         }

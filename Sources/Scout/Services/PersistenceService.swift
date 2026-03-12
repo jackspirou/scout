@@ -32,7 +32,11 @@ enum PersistenceError: LocalizedError {
 
 /// Service for persisting app state using UserDefaults and Codable JSON files.
 /// Data is stored in ~/Library/Application Support/Scout/.
-final class PersistenceService: Sendable {
+final class PersistenceService: PersistenceServiceProtocol, Sendable {
+    // MARK: - Shared Instance
+
+    static let shared = PersistenceService()
+
     // MARK: - Constants
 
     private enum StoreKey {
@@ -114,7 +118,7 @@ final class PersistenceService: Sendable {
     // MARK: - Workspace
 
     /// Saves a workspace to a JSON file.
-    func saveWorkspace(_ workspace: Workspace) {
+    func saveWorkspace(_ workspace: Workspace) async {
         let fileURL = workspaceFileURL(for: workspace.id)
         do {
             let data = try encoder.encode(workspace)
@@ -125,13 +129,13 @@ final class PersistenceService: Sendable {
     }
 
     /// Loads a workspace by ID.
-    func loadWorkspace(id: UUID) -> Workspace? {
+    func loadWorkspace(id: UUID) async -> Workspace? {
         let fileURL = workspaceFileURL(for: id)
         return loadDecodable(from: fileURL)
     }
 
     /// Lists all saved workspaces sorted by most recently updated.
-    func listWorkspaces() -> [Workspace] {
+    func listWorkspaces() async -> [Workspace] {
         let fileManager = FileManager.default
         guard
             let contents = try? fileManager.contentsOfDirectory(
@@ -156,7 +160,7 @@ final class PersistenceService: Sendable {
     }
 
     /// Deletes a workspace.
-    func deleteWorkspace(id: UUID) {
+    func deleteWorkspace(id: UUID) async {
         let fileURL = workspaceFileURL(for: id)
         try? FileManager.default.removeItem(at: fileURL)
     }
@@ -164,13 +168,13 @@ final class PersistenceService: Sendable {
     // MARK: - Session
 
     /// Saves the last session window state.
-    func saveLastSession(_ windowState: WindowState) {
+    func saveLastSession(_ windowState: WindowState) async {
         guard let data = try? encoder.encode(windowState) else { return }
         defaults.set(data, forKey: StoreKey.lastSession)
     }
 
     /// Loads the last session window state.
-    func loadLastSession() -> WindowState? {
+    func loadLastSession() async -> WindowState? {
         guard let data = defaults.data(forKey: StoreKey.lastSession) else { return nil }
         return try? decoder.decode(WindowState.self, from: data)
     }

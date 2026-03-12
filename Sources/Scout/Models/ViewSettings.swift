@@ -56,8 +56,8 @@ struct ViewSettings: Codable, Equatable {
     var viewMode: ViewMode
     var sortField: SortField
     var sortOrder: SortOrder
-    var columnWidths: [String: CGFloat]
-    var visibleColumns: [String]
+    var columnWidths: [SortField: CGFloat]
+    var visibleColumns: [SortField]
     var showHiddenFiles: Bool
     var iconSize: Double
     var groupBy: GroupBy
@@ -68,12 +68,12 @@ struct ViewSettings: Codable, Equatable {
         sortField: .name,
         sortOrder: .ascending,
         columnWidths: [
-            "name": 300,
-            "dateModified": 160,
-            "size": 80,
-            "kind": 120,
+            .name: 300,
+            .dateModified: 160,
+            .size: 80,
+            .kind: 120,
         ],
-        visibleColumns: ["name", "dateModified", "size", "kind"],
+        visibleColumns: [.name, .dateModified, .size, .kind],
         showHiddenFiles: false,
         iconSize: 64.0,
         groupBy: .none
@@ -83,13 +83,13 @@ struct ViewSettings: Codable, Equatable {
         viewMode: ViewMode = .list,
         sortField: SortField = .name,
         sortOrder: SortOrder = .ascending,
-        columnWidths: [String: CGFloat] = [
-            "name": 300,
-            "dateModified": 160,
-            "size": 80,
-            "kind": 120,
+        columnWidths: [SortField: CGFloat] = [
+            .name: 300,
+            .dateModified: 160,
+            .size: 80,
+            .kind: 120,
         ],
-        visibleColumns: [String] = ["name", "dateModified", "size", "kind"],
+        visibleColumns: [SortField] = [.name, .dateModified, .size, .kind],
         showHiddenFiles: Bool = false,
         iconSize: Double = 64.0,
         groupBy: GroupBy = .none

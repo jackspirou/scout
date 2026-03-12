@@ -19,6 +19,7 @@ struct ResolvedFileType {
     let icon: NSImage
     let isText: Bool
     let highlightrLanguage: String?
+    let iconDescriptor: FileTypeDescriptor
 }
 
 // MARK: - FileTypeResolver
@@ -36,19 +37,14 @@ enum FileTypeResolver {
         iconStyle: IconStyle = .system
     ) -> ResolvedFileType {
         if isDirectory {
-            let icon: NSImage
-            switch iconStyle {
-            case .system:
-                icon = NSWorkspace.shared.icon(forFile: url.path)
-            case .flat:
-                icon = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "Folder")
-                    ?? NSWorkspace.shared.icon(forFile: url.path)
-            }
+            let descriptor = FileTypeDescriptor(kind: systemKind ?? "Folder", symbolName: "folder.fill", isText: false, highlightrLanguage: nil)
+            let icon = makeIcon(from: descriptor, url: url, isDirectory: true, iconStyle: iconStyle)
             return ResolvedFileType(
-                kind: systemKind ?? "Folder",
+                kind: descriptor.kind,
                 icon: icon,
                 isText: false,
-                highlightrLanguage: nil
+                highlightrLanguage: nil,
+                iconDescriptor: descriptor
             )
         }
 
@@ -68,26 +64,36 @@ enum FileTypeResolver {
         }
 
         // Fallback: system kind + NSWorkspace icon.
+        let fallbackDescriptor = FileTypeDescriptor(kind: systemKind ?? "Document", symbolName: "doc", isText: false, highlightrLanguage: nil)
         return ResolvedFileType(
-            kind: systemKind ?? "Document",
+            kind: fallbackDescriptor.kind,
             icon: NSWorkspace.shared.icon(forFile: url.path),
             isText: false,
-            highlightrLanguage: nil
+            highlightrLanguage: nil,
+            iconDescriptor: fallbackDescriptor
         )
+    }
+
+    /// Creates an NSImage from a descriptor, resolving it on demand based on the icon style.
+    static func makeIcon(from descriptor: FileTypeDescriptor, url: URL, isDirectory: Bool, iconStyle: IconStyle) -> NSImage {
+        switch iconStyle {
+        case .system:
+            return NSWorkspace.shared.icon(forFile: url.path)
+        case .flat:
+            if isDirectory {
+                return NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "Folder")
+                    ?? NSWorkspace.shared.icon(forFile: url.path)
+            }
+            return NSImage(systemSymbolName: descriptor.symbolName, accessibilityDescription: descriptor.kind)
+                ?? NSWorkspace.shared.icon(forFile: url.path)
+        }
     }
 
     // MARK: - Private Helpers
 
     private static func makeResolved(from descriptor: FileTypeDescriptor, url: URL, iconStyle: IconStyle = .system) -> ResolvedFileType {
-        let icon: NSImage
-        switch iconStyle {
-        case .system:
-            icon = NSWorkspace.shared.icon(forFile: url.path)
-        case .flat:
-            icon = NSImage(systemSymbolName: descriptor.symbolName, accessibilityDescription: descriptor.kind)
-                ?? NSWorkspace.shared.icon(forFile: url.path)
-        }
-        return ResolvedFileType(kind: descriptor.kind, icon: icon, isText: descriptor.isText, highlightrLanguage: descriptor.highlightrLanguage)
+        let icon = makeIcon(from: descriptor, url: url, isDirectory: false, iconStyle: iconStyle)
+        return ResolvedFileType(kind: descriptor.kind, icon: icon, isText: descriptor.isText, highlightrLanguage: descriptor.highlightrLanguage, iconDescriptor: descriptor)
     }
 
     // MARK: - Ambiguous Extensions

@@ -39,11 +39,17 @@ enum FileSystemError: LocalizedError {
 
 /// Actor-based service for file system operations.
 /// Uses FileManager and POSIX APIs for performance-sensitive paths.
-actor FileSystemService {
+actor FileSystemService: FileSystemServiceProtocol {
     private let fileManager: FileManager
+    var iconStyle: IconStyle
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, iconStyle: IconStyle = .system) {
         self.fileManager = fileManager
+        self.iconStyle = iconStyle
+    }
+
+    func setIconStyle(_ style: IconStyle) {
+        self.iconStyle = style
     }
 
     // MARK: - Directory Contents
@@ -53,7 +59,7 @@ actor FileSystemService {
         at url: URL,
         sortedBy sortField: SortField = .name,
         order: SortOrder = .ascending,
-        iconStyle: IconStyle = .system
+        showHiddenFiles: Bool = false
     ) async throws -> [FileItem] {
         guard directoryExists(at: url) else {
             throw FileSystemError.directoryNotFound(url)
@@ -93,8 +99,12 @@ actor FileSystemService {
         items.reserveCapacity(contents.count)
 
         for fileURL in contents {
-            let item = buildFileItem(from: fileURL, resourceKeys: resourceKeys, iconStyle: iconStyle)
+            let item = buildFileItem(from: fileURL, resourceKeys: resourceKeys)
             items.append(item)
+        }
+
+        if !showHiddenFiles {
+            items.removeAll { $0.isHidden }
         }
 
         items.sort { lhs, rhs in
@@ -108,7 +118,7 @@ actor FileSystemService {
     // MARK: - File Info
 
     /// Returns detailed information about a single file or directory.
-    func fileInfo(at url: URL, iconStyle: IconStyle = .system) async throws -> FileItem {
+    func fileInfo(at url: URL) async throws -> FileItem {
         guard fileManager.fileExists(atPath: url.path) else {
             throw FileSystemError.fileNotFound(url)
         }
@@ -159,56 +169,24 @@ actor FileSystemService {
 
     /// Moves items from source URLs to the destination directory.
     func moveItems(from sources: [URL], to destination: URL) async throws {
-        guard directoryExists(at: destination) else {
-            throw FileSystemError.directoryNotFound(destination)
-        }
-
-        for sourceURL in sources {
-            guard fileManager.fileExists(atPath: sourceURL.path) else {
-                throw FileSystemError.fileNotFound(sourceURL)
-            }
-
-            let destinationURL = destination.appendingPathComponent(sourceURL.lastPathComponent)
-
-            do {
-                try fileManager.moveItem(at: sourceURL, to: destinationURL)
-            } catch let error as NSError {
-                if error.code == NSFileWriteFileExistsError {
-                    throw FileSystemError.itemAlreadyExists(destinationURL)
-                }
-                throw FileSystemError.operationFailed(
-                    "Failed to move \(sourceURL.lastPathComponent): \(error.localizedDescription)"
-                )
-            }
-        }
+        try await transferItems(
+            from: sources,
+            to: destination,
+            using: fileManager.moveItem,
+            verb: "move"
+        )
     }
 
     // MARK: - Copy Items
 
     /// Copies items from source URLs to the destination directory.
     func copyItems(from sources: [URL], to destination: URL) async throws {
-        guard directoryExists(at: destination) else {
-            throw FileSystemError.directoryNotFound(destination)
-        }
-
-        for sourceURL in sources {
-            guard fileManager.fileExists(atPath: sourceURL.path) else {
-                throw FileSystemError.fileNotFound(sourceURL)
-            }
-
-            let destinationURL = destination.appendingPathComponent(sourceURL.lastPathComponent)
-
-            do {
-                try fileManager.copyItem(at: sourceURL, to: destinationURL)
-            } catch let error as NSError {
-                if error.code == NSFileWriteFileExistsError {
-                    throw FileSystemError.itemAlreadyExists(destinationURL)
-                }
-                throw FileSystemError.operationFailed(
-                    "Failed to copy \(sourceURL.lastPathComponent): \(error.localizedDescription)"
-                )
-            }
-        }
+        try await transferItems(
+            from: sources,
+            to: destination,
+            using: fileManager.copyItem,
+            verb: "copy"
+        )
     }
 
     // MARK: - Trash Items
@@ -351,6 +329,37 @@ actor FileSystemService {
 
     // MARK: - Private Helpers
 
+    /// Shared helper for move and copy operations.
+    private func transferItems(
+        from sources: [URL],
+        to destination: URL,
+        using operation: (URL, URL) throws -> Void,
+        verb: String
+    ) async throws {
+        guard directoryExists(at: destination) else {
+            throw FileSystemError.directoryNotFound(destination)
+        }
+
+        for sourceURL in sources {
+            guard fileManager.fileExists(atPath: sourceURL.path) else {
+                throw FileSystemError.fileNotFound(sourceURL)
+            }
+
+            let destinationURL = destination.appendingPathComponent(sourceURL.lastPathComponent)
+
+            do {
+                try operation(sourceURL, destinationURL)
+            } catch let error as NSError {
+                if error.code == NSFileWriteFileExistsError {
+                    throw FileSystemError.itemAlreadyExists(destinationURL)
+                }
+                throw FileSystemError.operationFailed(
+                    "Failed to \(verb) \(sourceURL.lastPathComponent): \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
     private func directoryExists(at url: URL) -> Bool {
         var isDirectory: ObjCBool = false
         let exists = fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
@@ -358,7 +367,7 @@ actor FileSystemService {
     }
 
     /// Builds a FileItem from a URL using pre-fetched resource values.
-    private func buildFileItem(from url: URL, resourceKeys: Set<URLResourceKey>, iconStyle: IconStyle = .system) -> FileItem {
+    private func buildFileItem(from url: URL, resourceKeys: Set<URLResourceKey>) -> FileItem {
         // Prefer the factory method on FileItem which handles all edge cases.
         if let item = FileItem.create(from: url, iconStyle: iconStyle) {
             return item
@@ -369,11 +378,17 @@ actor FileSystemService {
         var isDir: ObjCBool = false
         fileManager.fileExists(atPath: url.path, isDirectory: &isDir)
 
+        let resolved = FileTypeResolver.resolve(url: url, isDirectory: isDir.boolValue, systemKind: nil, iconStyle: iconStyle)
         return FileItem(
             url: url,
             name: name,
             isDirectory: isDir.boolValue,
-            isHidden: name.hasPrefix(".")
+            isHidden: name.hasPrefix("."),
+            kind: resolved.kind,
+            isText: resolved.isText,
+            highlightrLanguage: resolved.highlightrLanguage,
+            iconDescriptor: resolved.iconDescriptor,
+            iconStyle: iconStyle
         )
     }
 }

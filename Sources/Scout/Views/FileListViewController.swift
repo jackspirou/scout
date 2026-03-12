@@ -118,16 +118,16 @@ final class FileListViewController: NSViewController {
         tableView.delegate = self
         tableView.dataSource = self
 
-        addColumn(identifier: .nameColumn, title: "Name", width: 300, minWidth: 150, sortKey: "name")
+        addColumn(identifier: .nameColumn, title: "Name", width: 300, minWidth: 150, sortKey: .name)
         addColumn(
             identifier: .dateModifiedColumn,
             title: "Date Modified",
             width: 160,
             minWidth: 100,
-            sortKey: "dateModified"
+            sortKey: .dateModified
         )
-        addColumn(identifier: .sizeColumn, title: "Size", width: 80, minWidth: 60, sortKey: "size")
-        addColumn(identifier: .kindColumn, title: "Kind", width: 120, minWidth: 80, sortKey: "kind")
+        addColumn(identifier: .sizeColumn, title: "Size", width: 80, minWidth: 60, sortKey: .size)
+        addColumn(identifier: .kindColumn, title: "Kind", width: 120, minWidth: 80, sortKey: .kind)
 
         tableView.contextMenuProvider = { [weak self] rows in
             self?.buildContextMenu(forRows: rows)
@@ -143,13 +143,13 @@ final class FileListViewController: NSViewController {
         title: String,
         width: CGFloat,
         minWidth: CGFloat,
-        sortKey: String
+        sortKey: SortField
     ) {
         let column = NSTableColumn(identifier: identifier)
         column.title = title
         column.width = width
         column.minWidth = minWidth
-        column.sortDescriptorPrototype = NSSortDescriptor(key: sortKey, ascending: true)
+        column.sortDescriptorPrototype = NSSortDescriptor(key: sortKey.rawValue, ascending: true)
         tableView.addTableColumn(column)
     }
 
@@ -185,11 +185,10 @@ final class FileListViewController: NSViewController {
         currentDirectoryURL = url
         loadingTask?.cancel()
 
-        let style = iconStyle
         loadingTask = Task { [weak self] in
             guard let self else { return }
 
-            let items = await Self.loadItems(at: url, iconStyle: style)
+            let items = (try? await self.fileSystemService.contentsOfDirectory(at: url)) ?? []
 
             guard !Task.isCancelled else { return }
 
@@ -205,6 +204,7 @@ final class FileListViewController: NSViewController {
     /// Updates the icon style and reloads the current directory if one is loaded.
     func setIconStyle(_ style: IconStyle) {
         iconStyle = style
+        Task { await fileSystemService.setIconStyle(style) }
         if let url = currentDirectoryURL {
             loadDirectory(at: url)
         }
@@ -335,32 +335,6 @@ final class FileListViewController: NSViewController {
                 loadDirectory(at: dir)
             } catch {
                 showError(error)
-            }
-        }
-    }
-
-    // MARK: - Async Directory Loading
-
-    private static func loadItems(at url: URL, iconStyle: IconStyle = .system) async -> [FileItem] {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let fm = FileManager.default
-                guard let urls = try? fm.contentsOfDirectory(
-                    at: url,
-                    includingPropertiesForKeys: [
-                        .contentModificationDateKey,
-                        .fileSizeKey,
-                        .isDirectoryKey,
-                        .localizedTypeDescriptionKey,
-                    ],
-                    options: [.skipsHiddenFiles]
-                ) else {
-                    continuation.resume(returning: [])
-                    return
-                }
-
-                let items = urls.compactMap { FileItem.create(from: $0, iconStyle: iconStyle) }
-                continuation.resume(returning: items)
             }
         }
     }

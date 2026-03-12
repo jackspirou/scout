@@ -12,7 +12,6 @@ struct FileItem: Identifiable, Hashable {
     let modificationDate: Date?
     let creationDate: Date?
     let kind: String
-    let icon: NSImage
     let isHidden: Bool
     let tags: [String]
 
@@ -24,6 +23,15 @@ struct FileItem: Identifiable, Hashable {
     let isLocked: Bool
     let isText: Bool
     let highlightrLanguage: String?
+
+    /// Descriptor and style used to resolve the icon image on demand.
+    let iconDescriptor: FileTypeDescriptor
+    let iconStyle: IconStyle
+
+    /// Lazily resolved icon image based on the descriptor and style.
+    var icon: NSImage {
+        FileTypeResolver.makeIcon(from: iconDescriptor, url: url, isDirectory: isDirectory, iconStyle: iconStyle)
+    }
 
     // MARK: - Identifiable
 
@@ -73,7 +81,7 @@ struct FileItem: Identifiable, Hashable {
 
     // MARK: - Initializers
 
-    /// Full initializer with all properties.
+    /// Full initializer with all properties — pure assignment, no resolution logic.
     init(
         url: URL,
         name: String,
@@ -84,10 +92,10 @@ struct FileItem: Identifiable, Hashable {
         size: Int64? = nil,
         modificationDate: Date? = nil,
         creationDate: Date? = nil,
-        kind: String? = nil,
-        icon: NSImage? = nil,
-        isText: Bool? = nil,
-        highlightrLanguage: String? = nil,
+        kind: String,
+        isText: Bool,
+        highlightrLanguage: String?,
+        iconDescriptor: FileTypeDescriptor,
         iconStyle: IconStyle = .system,
         contentType: String? = nil,
         tags: [String] = [],
@@ -103,24 +111,15 @@ struct FileItem: Identifiable, Hashable {
         self.size = size
         self.modificationDate = modificationDate
         self.creationDate = creationDate
+        self.kind = kind
+        self.isText = isText
+        self.highlightrLanguage = highlightrLanguage
+        self.iconDescriptor = iconDescriptor
+        self.iconStyle = iconStyle
         self.contentType = contentType
         self.tags = tags
         self.permissions = permissions
         self.isLocked = isLocked
-
-        // Resolve file type for any missing properties.
-        if icon == nil || kind == nil || isText == nil {
-            let resolved = FileTypeResolver.resolve(url: url, isDirectory: isDirectory, systemKind: kind, iconStyle: iconStyle)
-            self.kind = kind ?? resolved.kind
-            self.icon = icon ?? resolved.icon
-            self.isText = isText ?? resolved.isText
-            self.highlightrLanguage = highlightrLanguage ?? resolved.highlightrLanguage
-        } else {
-            self.kind = kind!
-            self.icon = icon!
-            self.isText = isText!
-            self.highlightrLanguage = highlightrLanguage
-        }
     }
 
     // MARK: - Hashable
@@ -168,13 +167,10 @@ struct FileItem: Identifiable, Hashable {
                 name: name,
                 isDirectory: isDir.boolValue,
                 isHidden: name.hasPrefix("."),
-                size: nil,
-                modificationDate: nil,
-                creationDate: nil,
                 kind: resolved.kind,
-                icon: resolved.icon,
                 isText: resolved.isText,
                 highlightrLanguage: resolved.highlightrLanguage,
+                iconDescriptor: resolved.iconDescriptor,
                 iconStyle: iconStyle,
                 tags: [],
                 isLocked: false
@@ -184,13 +180,8 @@ struct FileItem: Identifiable, Hashable {
         let isDirectory = resourceValues.isDirectory ?? false
         let size: Int64? = isDirectory ? nil : Int64(resourceValues.totalFileSize ?? resourceValues.fileSize ?? 0)
         let isLocked = resourceValues.isUserImmutable ?? false
-        let resolved = FileTypeResolver.resolve(
-            url: url,
-            isDirectory: isDirectory,
-            systemKind: resourceValues.localizedTypeDescription,
-            iconStyle: iconStyle
-        )
 
+        let resolved = FileTypeResolver.resolve(url: url, isDirectory: isDirectory, systemKind: resourceValues.localizedTypeDescription, iconStyle: iconStyle)
         return FileItem(
             url: url,
             name: resourceValues.name ?? url.lastPathComponent,
@@ -201,10 +192,10 @@ struct FileItem: Identifiable, Hashable {
             size: size,
             modificationDate: resourceValues.contentModificationDate,
             creationDate: resourceValues.creationDate,
-            kind: resolved.kind,
-            icon: resolved.icon,
+            kind: resourceValues.localizedTypeDescription ?? resolved.kind,
             isText: resolved.isText,
             highlightrLanguage: resolved.highlightrLanguage,
+            iconDescriptor: resolved.iconDescriptor,
             iconStyle: iconStyle,
             contentType: resourceValues.contentType?.identifier,
             tags: resourceValues.tagNames ?? [],
