@@ -1,5 +1,6 @@
 import AppKit
 import CoreServices
+import UniformTypeIdentifiers
 
 /// Represents a single file system item with its metadata.
 struct FileItem: Identifiable, Hashable {
@@ -40,6 +41,38 @@ struct FileItem: Identifiable, Hashable {
     }
 
     // MARK: - Computed Properties
+
+    /// Whether this file is an image, determined by UTType conformance or known image extensions.
+    var isImage: Bool {
+        if let contentType, let utType = UTType(contentType) {
+            return utType.conforms(to: .image)
+        }
+        return Self.imageExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether this file is a video, determined by UTType conformance or known video extensions.
+    var isVideo: Bool {
+        if let contentType, let utType = UTType(contentType) {
+            return utType.conforms(to: .movie)
+        }
+        return Self.videoExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether this file is an audio file, determined by UTType conformance or known audio extensions.
+    var isAudio: Bool {
+        if let contentType, let utType = UTType(contentType) {
+            return utType.conforms(to: .audio)
+        }
+        return Self.audioExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether this file is a PDF document.
+    var isPDF: Bool {
+        if let contentType, let utType = UTType(contentType) {
+            return utType.conforms(to: .pdf)
+        }
+        return url.pathExtension.lowercased() == "pdf"
+    }
 
     /// The file extension (without leading dot), or an empty string if none.
     var `extension`: String {
@@ -234,4 +267,19 @@ struct FileItem: Identifiable, Hashable {
         formatter.countStyle = .file
         return formatter
     }()
+
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "icns",
+        "tiff", "tif", "bmp", "heic", "heif", "raw", "cr2", "nef", "arw",
+    ]
+
+    private static let videoExtensions: Set<String> = [
+        "mp4", "mov", "m4v", "avi", "mkv", "webm", "flv", "wmv",
+        "mpg", "mpeg", "ts", "3gp",
+    ]
+
+    private static let audioExtensions: Set<String> = [
+        "mp3", "m4a", "wav", "aac", "flac", "ogg", "wma",
+        "aiff", "aif", "opus",
+    ]
 }

@@ -244,6 +244,32 @@ enum FileTypeResolver {
         map["bmp"] = FileTypeDescriptor(kind: "BMP Image", symbolName: "photo", isText: false, highlightrLanguage: nil)
         map["heic"] = FileTypeDescriptor(kind: "HEIC Image", symbolName: "photo", isText: false, highlightrLanguage: nil)
 
+        // Video
+        map["mp4"] = FileTypeDescriptor(kind: "MP4 Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["mov"] = FileTypeDescriptor(kind: "QuickTime Movie", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["m4v"] = FileTypeDescriptor(kind: "M4V Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["avi"] = FileTypeDescriptor(kind: "AVI Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["mkv"] = FileTypeDescriptor(kind: "Matroska Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["webm"] = FileTypeDescriptor(kind: "WebM Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["flv"] = FileTypeDescriptor(kind: "Flash Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["wmv"] = FileTypeDescriptor(kind: "Windows Media Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["mpg"] = FileTypeDescriptor(kind: "MPEG Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["mpeg"] = FileTypeDescriptor(kind: "MPEG Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["ts"] = FileTypeDescriptor(kind: "MPEG Transport Stream", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+        map["3gp"] = FileTypeDescriptor(kind: "3GPP Video", symbolName: "play.rectangle.fill", isText: false, highlightrLanguage: nil)
+
+        // Audio
+        map["mp3"] = FileTypeDescriptor(kind: "MP3 Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["m4a"] = FileTypeDescriptor(kind: "M4A Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["wav"] = FileTypeDescriptor(kind: "WAV Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["aac"] = FileTypeDescriptor(kind: "AAC Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["flac"] = FileTypeDescriptor(kind: "FLAC Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["ogg"] = FileTypeDescriptor(kind: "Ogg Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["wma"] = FileTypeDescriptor(kind: "Windows Media Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["aiff"] = FileTypeDescriptor(kind: "AIFF Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["aif"] = FileTypeDescriptor(kind: "AIFF Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+        map["opus"] = FileTypeDescriptor(kind: "Opus Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
+
         // Archives
         map["zip"] = FileTypeDescriptor(kind: "ZIP Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
         map["tar"] = FileTypeDescriptor(kind: "TAR Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)

@@ -4,7 +4,7 @@ import AppKit
 
 /// Container view controller for the preview pane. Swaps between content-specific
 /// child view controllers based on file type. Each child owns its own header.
-/// Currently supports text file preview; extensible for directories, images, etc.
+/// Supports text, image, and directory previews.
 final class PreviewViewController: NSViewController {
     // MARK: - Properties
 
@@ -12,6 +12,10 @@ final class PreviewViewController: NSViewController {
     private let placeholderLabel = NSTextField(labelWithString: "Select a file to preview")
 
     private let textPreview = TextFilePreviewViewController()
+    private let imagePreview = ImagePreviewViewController()
+    private let pdfPreview = PDFPreviewViewController()
+    private let videoPreview = VideoPreviewViewController()
+    private let directoryPreview = DirectoryPreviewViewController()
     private weak var activeChild: NSViewController?
 
     // MARK: - Lifecycle
@@ -44,13 +48,11 @@ final class PreviewViewController: NSViewController {
 
     private func layoutSubviews() {
         NSLayoutConstraint.activate([
-            // Content container fills entire view.
             contentContainer.topAnchor.constraint(equalTo: view.topAnchor),
             contentContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             contentContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            // Placeholder centered in view.
             placeholderLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             placeholderLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
@@ -65,22 +67,32 @@ final class PreviewViewController: NSViewController {
             return
         }
 
-        guard item.isText else {
+        if item.isDirectory {
+            showChild(directoryPreview)
+            directoryPreview.displayItem(item)
+        } else if item.isPDF {
+            showChild(pdfPreview)
+            pdfPreview.displayItem(item)
+        } else if item.isVideo || item.isAudio {
+            showChild(videoPreview)
+            videoPreview.displayItem(item)
+        } else if item.isImage {
+            showChild(imagePreview)
+            imagePreview.displayItem(item)
+        } else if item.isText {
+            showChild(textPreview)
+            textPreview.displayItem(item)
+        } else {
             removeActiveChild()
             contentContainer.isHidden = true
             placeholderLabel.stringValue = "No preview available"
             placeholderLabel.isHidden = false
-            return
         }
-
-        showChild(textPreview)
-        textPreview.displayItem(item)
     }
 
     /// Clears the preview and shows the default placeholder.
     func clearPreview() {
-        removeActiveChild()
-        textPreview.clear()
+        clearActiveChild()
         contentContainer.isHidden = true
         placeholderLabel.stringValue = "Select a file to preview"
         placeholderLabel.isHidden = false
@@ -109,10 +121,30 @@ final class PreviewViewController: NSViewController {
         activeChild = child
     }
 
-    private func removeActiveChild() {
+    private func clearActiveChild() {
         guard let child = activeChild else { return }
+        clearChild(child)
         child.view.removeFromSuperview()
         child.removeFromParent()
         activeChild = nil
+    }
+
+    private func removeActiveChild() {
+        guard let child = activeChild else { return }
+        clearChild(child)
+        child.view.removeFromSuperview()
+        child.removeFromParent()
+        activeChild = nil
+    }
+
+    private func clearChild(_ child: NSViewController) {
+        switch child {
+        case let vc as TextFilePreviewViewController: vc.clear()
+        case let vc as ImagePreviewViewController: vc.clear()
+        case let vc as PDFPreviewViewController: vc.clear()
+        case let vc as VideoPreviewViewController: vc.clear()
+        case let vc as DirectoryPreviewViewController: vc.clear()
+        default: break
+        }
     }
 }

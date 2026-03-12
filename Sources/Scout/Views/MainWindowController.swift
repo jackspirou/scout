@@ -395,8 +395,8 @@ extension MainWindowController: BrowserContainerDelegate {
         if items.count == 1 {
             let item = items[0]
 
-            // Auto-open preview on first text file selection (unless user dismissed it)
-            if !showPreview, !userDismissedPreview, !item.isDirectory, item.isText {
+            // Auto-open preview on first text/image file selection (unless user dismissed it)
+            if !showPreview, !userDismissedPreview, !item.isDirectory, (item.isText || item.isImage || item.isPDF || item.isVideo || item.isAudio) {
                 showPreview = true
             }
 
