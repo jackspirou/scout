@@ -74,7 +74,7 @@ struct ViewSettings: Codable, Equatable {
             .kind: 120,
         ],
         visibleColumns: [.name, .dateModified, .size, .kind],
-        showHiddenFiles: false,
+        showHiddenFiles: true,
         iconSize: 64.0,
         groupBy: .none
     )
@@ -90,7 +90,7 @@ struct ViewSettings: Codable, Equatable {
             .kind: 120,
         ],
         visibleColumns: [SortField] = [.name, .dateModified, .size, .kind],
-        showHiddenFiles: Bool = false,
+        showHiddenFiles: Bool = true,
         iconSize: Double = 64.0,
         groupBy: GroupBy = .none
     ) {

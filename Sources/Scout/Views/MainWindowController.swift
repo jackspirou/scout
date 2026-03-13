@@ -35,6 +35,7 @@ final class MainWindowController: NSWindowController {
     // MARK: - Properties
 
     private(set) var iconStyle: IconStyle = .system
+    private(set) var showHiddenFiles: Bool = true
 
     private(set) var isDualPane: Bool = false {
         didSet { dualPaneDidChange() }
@@ -59,7 +60,19 @@ final class MainWindowController: NSWindowController {
         let window = Self.makeWindow()
         self.init(window: window)
         self.iconStyle = PersistenceService.shared.loadIconStyle()
+        self.showHiddenFiles = PersistenceService.shared.loadShowHiddenFiles()
         browserContainer.setIconStyle(iconStyle)
+        browserContainer.setShowHiddenFiles(showHiddenFiles)
+        previewViewController.onNavigate = { [weak self] (url: URL) in
+            self?.browserContainer.activePaneController().navigateTo(url: url)
+        }
+        browserContainer.onSpacebarPressed = { [weak self] in
+            guard let self, self.showPreview, self.previewViewController.handlesSpacebar else {
+                return false
+            }
+            self.previewViewController.togglePlayback()
+            return true
+        }
         configureContentSplitView()
         configureToolbar()
     }
@@ -160,6 +173,12 @@ final class MainWindowController: NSWindowController {
         iconStyle = style
         PersistenceService.shared.saveIconStyle(style)
         browserContainer.setIconStyle(style)
+    }
+
+    func toggleShowHiddenFiles() {
+        showHiddenFiles.toggle()
+        PersistenceService.shared.saveShowHiddenFiles(showHiddenFiles)
+        browserContainer.setShowHiddenFiles(showHiddenFiles)
     }
 
     func closeCurrentTab() {

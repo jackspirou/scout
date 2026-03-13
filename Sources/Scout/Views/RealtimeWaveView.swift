@@ -1,4 +1,5 @@
 import AppKit
+import CoreVideo
 
 // MARK: - RealtimeWaveView
 
@@ -6,6 +7,8 @@ import AppKit
 /// FFT spectrum data. A primary wave maps each frequency band directly to a
 /// control point, so spectral spikes (kicks, snares, vocals) create visible
 /// peaks. A thinner echo wave adds depth. Both are mirrored around the center.
+///
+/// Uses CVDisplayLink for jitter-free, display-synced animation.
 final class RealtimeWaveView: NSView {
     // MARK: - Properties
 
@@ -17,12 +20,20 @@ final class RealtimeWaveView: NSView {
     private var targetValues: [Float]
     private var lastUpdateTime: CFTimeInterval = 0
 
-    private var animationTimer: Timer?
+    private var displayLink: CVDisplayLink?
+    private var isDecaying = false
     private var appearanceObservation: NSKeyValueObservation?
 
     // Asymmetric smoothing — near-instant attack, fast decay for punch
     private let attackSpeed: Float = 45.0
     private let decaySpeed: Float = 10.0
+
+    // Cached colors — recomputed on appearance change to avoid per-frame
+    // color space conversions in draw().
+    private var cachedBassColor: NSColor = .controlAccentColor
+    private var cachedMidsColor: NSColor = .controlAccentColor
+    private var cachedTrebleColor: NSColor = .controlAccentColor
+    private var cachedCenterLineColor: NSColor = .controlAccentColor
 
     // MARK: - Init
 
@@ -31,33 +42,81 @@ final class RealtimeWaveView: NSView {
         targetValues = Array(repeating: 0, count: kSpectrumBandCount)
 
         super.init(frame: frameRect)
+        updateCachedColors()
         appearanceObservation = observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            self?.updateCachedColors()
             self?.needsDisplay = true
         }
 
         lastUpdateTime = CACurrentMediaTime()
-        startAnimationTimer()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
     deinit {
-        stopAnimationTimer()
+        stopDisplayLink()
     }
 
     // MARK: - Public API
 
     func pushSpectrum(_ bands: [Float]) {
+        // Ignore incoming FFT data while decaying — queued audio tap callbacks
+        // arrive after pause and would fight the smooth decay to rest.
+        guard !isDecaying else { return }
         for i in 0..<min(bands.count, bandCount) {
             targetValues[i] = bands[i]
         }
     }
 
     func reset() {
+        stopDisplayLink()
+        isDecaying = false
         displayValues = Array(repeating: 0, count: bandCount)
         targetValues = Array(repeating: 0, count: bandCount)
         needsDisplay = true
+    }
+
+    // MARK: - Display Link
+
+    func startAnimating() {
+        guard displayLink == nil else { return }
+        isDecaying = false
+        lastUpdateTime = CACurrentMediaTime()
+
+        var link: CVDisplayLink?
+        CVDisplayLinkCreateWithActiveCGDisplays(&link)
+        guard let link else { return }
+
+        let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, context in
+            guard let context else { return kCVReturnSuccess }
+            let view = Unmanaged<RealtimeWaveView>.fromOpaque(context).takeUnretainedValue()
+            DispatchQueue.main.async { view.animateStep() }
+            return kCVReturnSuccess
+        }
+
+        let pointer = Unmanaged.passRetained(self).toOpaque()
+        CVDisplayLinkSetOutputCallback(link, callback, pointer)
+        CVDisplayLinkStart(link)
+        displayLink = link
+    }
+
+    func stopAnimating() {
+        // Zero out targets so waves decay to rest, but keep the display link
+        // running until values settle. The link self-stops in animateStep().
+        for i in 0..<bandCount {
+            targetValues[i] = 0
+        }
+        isDecaying = true
+    }
+
+    private func stopDisplayLink() {
+        if let link = displayLink {
+            CVDisplayLinkStop(link)
+            // Release the retained self that was passed to the display link callback.
+            Unmanaged<RealtimeWaveView>.passUnretained(self).release()
+            displayLink = nil
+        }
     }
 
     // MARK: - Animation
@@ -68,26 +127,36 @@ final class RealtimeWaveView: NSView {
         lastUpdateTime = now
         let clampedDT = min(dt, 0.1)
 
+        var maxValue: Float = 0
         for i in 0..<bandCount {
             let current = displayValues[i]
             let target = targetValues[i]
             let speed = target > current ? attackSpeed : decaySpeed
             let factor = 1.0 - exp(-speed * clampedDT)
-            displayValues[i] = current + (target - current) * factor
+            let newValue = current + (target - current) * factor
+            displayValues[i] = newValue
+            maxValue = max(maxValue, abs(newValue))
         }
 
         needsDisplay = true
-    }
 
-    private func startAnimationTimer() {
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            self?.animateStep()
+        // Once decaying and all values have settled near zero, stop.
+        if isDecaying, maxValue < 0.001 {
+            for i in 0..<bandCount { displayValues[i] = 0 }
+            stopDisplayLink()
+            isDecaying = false
+            needsDisplay = true
         }
     }
 
-    private func stopAnimationTimer() {
-        animationTimer?.invalidate()
-        animationTimer = nil
+    // MARK: - Colors
+
+    private func updateCachedColors() {
+        let accent = NSColor.controlAccentColor
+        cachedBassColor = accent.hueRotated(by: 0.12)
+        cachedMidsColor = accent
+        cachedTrebleColor = accent.hueRotated(by: -0.08)
+        cachedCenterLineColor = accent.withAlphaComponent(0.12)
     }
 
     // MARK: - Drawing
@@ -98,18 +167,12 @@ final class RealtimeWaveView: NSView {
         let height = bounds.height
         let midY = height / 2
         let time = CGFloat(CACurrentMediaTime())
-        // Three waves mapped to frequency ranges: bass, mids, treble
-        // Each reacts independently to its part of the spectrum
-        let accent = NSColor.controlAccentColor
-        let bassColor = accent.hueRotated(by: 0.12)   // cool (cyan/teal)
-        let midsColor = accent                          // base accent (blue)
-        let trebleColor = accent.hueRotated(by: -0.08) // warm (pink/coral)
 
         let third = bandCount / 3
 
         // Bass wave — heaviest and bright, drawn first (behind)
         drawWave(
-            ctx: ctx, width: width, midY: midY, time: time, color: bassColor,
+            ctx: ctx, width: width, midY: midY, time: time, color: cachedBassColor,
             bandStart: 0, bandEnd: third, gain: 1.0,
             phaseOffset: 0, harmonic: 0.2, strokeAlpha: 0.85, fillAlpha: 0.06,
             lineWidth: 3.5, mirrorStrokeAlpha: 0.5, mirrorLineWidth: 2.8
@@ -117,7 +180,7 @@ final class RealtimeWaveView: NSView {
 
         // Treble wave — warm/coral, thinner line
         drawWave(
-            ctx: ctx, width: width, midY: midY, time: time, color: trebleColor,
+            ctx: ctx, width: width, midY: midY, time: time, color: cachedTrebleColor,
             bandStart: third * 2, bandEnd: bandCount, gain: 1.0,
             phaseOffset: .pi * 1.1, harmonic: 0.6, strokeAlpha: 1.0, fillAlpha: 0.08,
             lineWidth: 0.8, mirrorStrokeAlpha: 0.7, mirrorLineWidth: 0.6
@@ -125,14 +188,14 @@ final class RealtimeWaveView: NSView {
 
         // Mids wave — accent blue (same as timeline), bright and bold, drawn last (on top)
         drawWave(
-            ctx: ctx, width: width, midY: midY, time: time, color: midsColor,
+            ctx: ctx, width: width, midY: midY, time: time, color: cachedMidsColor,
             bandStart: third, bandEnd: third * 2, gain: 1.0,
             phaseOffset: .pi * 0.5, harmonic: 0.4, strokeAlpha: 1.0, fillAlpha: 0.07,
             lineWidth: 2.4, mirrorStrokeAlpha: 0.7, mirrorLineWidth: 2.0
         )
 
         // Center line
-        ctx.setStrokeColor(accent.withAlphaComponent(0.12).cgColor)
+        ctx.setStrokeColor(cachedCenterLineColor.cgColor)
         ctx.setLineWidth(0.5)
         ctx.move(to: CGPoint(x: 0, y: midY))
         ctx.addLine(to: CGPoint(x: width, y: midY))

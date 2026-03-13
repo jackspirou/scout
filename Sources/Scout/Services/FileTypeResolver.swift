@@ -63,12 +63,15 @@ enum FileTypeResolver {
             return makeResolved(from: descriptor, url: url, iconStyle: iconStyle)
         }
 
-        // Fallback: system kind + NSWorkspace icon.
-        let fallbackDescriptor = FileTypeDescriptor(kind: systemKind ?? "Document", symbolName: "doc", isText: false, highlightrLanguage: nil)
+        // Fallback: sniff for text content. If the first 512 bytes contain no
+        // null bytes and are valid UTF-8, treat as a text file. This catches
+        // dotfiles and extensionless files like .zshrc, .bashrc, etc.
+        let isText = isLikelyTextFile(at: url)
+        let fallbackDescriptor = FileTypeDescriptor(kind: systemKind ?? (isText ? "Plain Text" : "Document"), symbolName: isText ? "doc.text" : "doc", isText: isText, highlightrLanguage: nil)
         return ResolvedFileType(
             kind: fallbackDescriptor.kind,
             icon: NSWorkspace.shared.icon(forFile: url.path),
-            isText: false,
+            isText: isText,
             highlightrLanguage: nil,
             iconDescriptor: fallbackDescriptor
         )
@@ -94,6 +97,20 @@ enum FileTypeResolver {
     private static func makeResolved(from descriptor: FileTypeDescriptor, url: URL, iconStyle: IconStyle = .system) -> ResolvedFileType {
         let icon = makeIcon(from: descriptor, url: url, isDirectory: false, iconStyle: iconStyle)
         return ResolvedFileType(kind: descriptor.kind, icon: icon, isText: descriptor.isText, highlightrLanguage: descriptor.highlightrLanguage, iconDescriptor: descriptor)
+    }
+
+    // MARK: - Text Sniffing
+
+    /// Reads the first 512 bytes and returns true if the content looks like text
+    /// (valid UTF-8 with no null bytes). Returns false for empty or unreadable files.
+    private static func isLikelyTextFile(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        let data = handle.readData(ofLength: 512)
+        try? handle.close()
+
+        guard !data.isEmpty else { return false }
+        if data.contains(0x00) { return false }
+        return String(data: data, encoding: .utf8) != nil
     }
 
     // MARK: - Ambiguous Extensions

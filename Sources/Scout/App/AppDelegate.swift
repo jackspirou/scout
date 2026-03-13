@@ -258,6 +258,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]),
             .separator,
             .item(
+                "Show Hidden Files",
+                action: #selector(handleToggleHiddenFiles(_:)),
+                key: ".",
+                modifiers: [.command, .shift]
+            ),
+            .separator,
+            .item(
                 "Enter Full Screen",
                 action: #selector(NSWindow.toggleFullScreen(_:)),
                 key: "f",
@@ -375,6 +382,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Will be dispatched to the active window controller via responder chain
     }
 
+    // MARK: - Hidden Files Action
+
+    @objc private func handleToggleHiddenFiles(_ sender: Any?) {
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.toggleShowHiddenFiles()
+    }
+
     // MARK: - Icon Style Actions
 
     @objc private func handleSystemIcons(_ sender: Any?) {
@@ -395,6 +409,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(handleToggleHiddenFiles(_:)) {
+            let show = (NSApp.keyWindow?.windowController as? MainWindowController)?.showHiddenFiles ?? true
+            menuItem.state = show ? .on : .off
+            return true
+        }
         if menuItem.action == #selector(handleSystemIcons(_:)) {
             let currentStyle = (NSApp.keyWindow?.windowController as? MainWindowController)?.iconStyle ?? .system
             menuItem.state = currentStyle == .system ? .on : .off

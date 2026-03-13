@@ -94,8 +94,11 @@ actor SearchService: SearchServiceProtocol {
                 )
             }
 
-            continuation.onTermination = { _ in
+            continuation.onTermination = { [weak self] _ in
                 taskHandle.cancel()
+                Task { [weak self] in
+                    await self?.cancelActiveSearch()
+                }
             }
         }
     }
@@ -108,7 +111,7 @@ actor SearchService: SearchServiceProtocol {
 
         let items: [FileItem]
         do {
-            items = try await fileSystemService.contentsOfDirectory(at: directory)
+            items = try await fileSystemService.contentsOfDirectory(at: directory, showHiddenFiles: true)
         } catch {
             return []
         }
@@ -284,6 +287,12 @@ private final class SpotlightObserver: NSObject, @unchecked Sendable {
         self.continuation = continuation
     }
 
+    /// Removes all notification observations for the given query.
+    func removeObservers(for query: NSMetadataQuery) {
+        NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidUpdate, object: query)
+        NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: query)
+    }
+
     @objc func queryDidUpdate(_ notification: Notification) {
         guard let query = notification.object as? NSMetadataQuery else { return }
         let items = extractItems(from: query)
@@ -301,6 +310,7 @@ private final class SpotlightObserver: NSObject, @unchecked Sendable {
         if !items.isEmpty {
             continuation.yield(items)
         }
+        removeObservers(for: query)
         query.stop()
         continuation.finish()
     }

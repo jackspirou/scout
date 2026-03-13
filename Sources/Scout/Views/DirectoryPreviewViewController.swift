@@ -13,6 +13,9 @@ final class DirectoryPreviewViewController: NSViewController, PreviewChild {
     private var currentItem: FileItem?
     private var currentLoadTask: Task<Void, Never>?
 
+    /// Called when the user double-clicks a directory to navigate into it.
+    var onNavigate: ((URL) -> Void)?
+
     /// Cached directory contents keyed by URL.
     private var childrenCache: [URL: [FileItem]] = [:]
     private var expandTasks: [Task<Void, Never>] = []
@@ -50,13 +53,18 @@ final class DirectoryPreviewViewController: NSViewController, PreviewChild {
         outlineView.indentationPerLevel = 16
         outlineView.autoresizesOutlineColumn = true
         outlineView.usesAlternatingRowBackgroundColors = false
-        outlineView.style = .sourceList
+        outlineView.style = .plain
         outlineView.dataSource = self
         outlineView.delegate = self
+        outlineView.doubleAction = #selector(outlineViewDoubleClicked)
+        outlineView.target = self
+        outlineView.menu = NSMenu()
+        outlineView.menu?.delegate = self
 
         let nameColumn = NSTableColumn(identifier: Self.nameColumnID)
         nameColumn.title = "Name"
         nameColumn.minWidth = 120
+        nameColumn.resizingMask = .autoresizingMask
         outlineView.addTableColumn(nameColumn)
         outlineView.outlineTableColumn = nameColumn
 
@@ -65,7 +73,10 @@ final class DirectoryPreviewViewController: NSViewController, PreviewChild {
         sizeColumn.width = 60
         sizeColumn.minWidth = 40
         sizeColumn.maxWidth = 80
+        sizeColumn.resizingMask = []
         outlineView.addTableColumn(sizeColumn)
+
+        outlineView.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
 
         scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -114,9 +125,11 @@ final class DirectoryPreviewViewController: NSViewController, PreviewChild {
             var parts: [String] = []
             if folderCount > 0 { parts.append("\(folderCount) folder\(folderCount == 1 ? "" : "s")") }
             if fileCount > 0 { parts.append("\(fileCount) file\(fileCount == 1 ? "" : "s")") }
-            self.headerView.setCompactDetail(parts.joined(separator: ", "))
 
-            self.outlineView.reloadData()
+            await MainActor.run {
+                self.headerView.setCompactDetail(parts.joined(separator: ", "))
+                self.outlineView.reloadData()
+            }
 
             // Auto-expand first-level directories. Snapshot the items first to
             // avoid iterating over outline rows that may shift during expansion.
@@ -124,7 +137,9 @@ final class DirectoryPreviewViewController: NSViewController, PreviewChild {
             for child in directoryChildren {
                 guard !Task.isCancelled, self.currentItem?.url == item.url else { return }
                 _ = await self.loadChildren(for: child.url)
-                self.outlineView.expandItem(child)
+                await MainActor.run {
+                    self.outlineView.expandItem(child)
+                }
             }
         }
     }
@@ -138,6 +153,18 @@ final class DirectoryPreviewViewController: NSViewController, PreviewChild {
         outlineView.reloadData()
     }
 
+    // MARK: - Actions
+
+    @objc private func outlineViewDoubleClicked() {
+        let row = outlineView.clickedRow
+        guard row >= 0, let item = outlineView.item(atRow: row) as? FileItem else { return }
+        if item.isDirectory {
+            onNavigate?(item.url)
+        } else {
+            NSWorkspace.shared.open(item.url)
+        }
+    }
+
     // MARK: - Private
 
     private func loadChildren(for url: URL) async -> [FileItem] {
@@ -145,7 +172,7 @@ final class DirectoryPreviewViewController: NSViewController, PreviewChild {
 
         do {
             let items = try await fileSystemService.contentsOfDirectory(
-                at: url, sortedBy: .name, order: .ascending, showHiddenFiles: false
+                at: url, sortedBy: .name, order: .ascending, showHiddenFiles: true
             )
             childrenCache[url] = items
             return items
@@ -229,6 +256,7 @@ extension DirectoryPreviewViewController: NSOutlineViewDelegate {
             }
             cell.imageView?.image = fileItem.icon
             cell.textField?.stringValue = fileItem.name
+            cell.alphaValue = fileItem.isHidden ? 0.5 : 1.0
             return cell
         }
 
@@ -257,6 +285,7 @@ extension DirectoryPreviewViewController: NSOutlineViewDelegate {
                 ])
             }
             cell.textField?.stringValue = fileItem.isDirectory ? "" : fileItem.formattedSize
+            cell.alphaValue = fileItem.isHidden ? 0.5 : 1.0
             return cell
         }
 
@@ -271,9 +300,77 @@ extension DirectoryPreviewViewController: NSOutlineViewDelegate {
                 guard let self else { return }
                 _ = await self.loadChildren(for: fileItem.url)
                 guard !Task.isCancelled, self.currentItem != nil else { return }
-                self.outlineView.reloadItem(fileItem, reloadChildren: true)
+                await MainActor.run {
+                    self.outlineView.reloadItem(fileItem, reloadChildren: true)
+                }
             }
             expandTasks.append(task)
+            // Remove completed tasks to prevent unbounded growth.
+            expandTasks.removeAll { $0.isCancelled }
         }
+    }
+}
+
+// MARK: - NSMenuDelegate (Context Menu)
+
+extension DirectoryPreviewViewController: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        let clickedRow = outlineView.clickedRow
+        guard clickedRow >= 0, let item = outlineView.item(atRow: clickedRow) as? FileItem else { return }
+
+        // Open
+        let openItem = NSMenuItem(title: "Open", action: #selector(contextOpen(_:)), keyEquivalent: "")
+        openItem.target = self
+        openItem.representedObject = item
+        menu.addItem(openItem)
+
+        menu.addItem(.separator())
+
+        // Get Info
+        let infoItem = NSMenuItem(title: "Get Info", action: #selector(contextGetInfo(_:)), keyEquivalent: "")
+        infoItem.target = self
+        infoItem.representedObject = item
+        menu.addItem(infoItem)
+
+        // Copy Path
+        let copyPathItem = NSMenuItem(title: "Copy Path", action: #selector(contextCopyPath(_:)), keyEquivalent: "")
+        copyPathItem.target = self
+        copyPathItem.representedObject = item
+        menu.addItem(copyPathItem)
+
+        menu.addItem(.separator())
+
+        // Show in Finder
+        let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextShowInFinder(_:)), keyEquivalent: "")
+        finderItem.target = self
+        finderItem.representedObject = item
+        menu.addItem(finderItem)
+    }
+
+    @objc private func contextOpen(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? FileItem else { return }
+        if item.isDirectory {
+            onNavigate?(item.url)
+        } else {
+            NSWorkspace.shared.open(item.url)
+        }
+    }
+
+    @objc private func contextGetInfo(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? FileItem else { return }
+        FinderHelper.showGetInfo(for: [item.url])
+    }
+
+    @objc private func contextCopyPath(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? FileItem else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(item.url.path, forType: .string)
+    }
+
+    @objc private func contextShowInFinder(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? FileItem else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 }

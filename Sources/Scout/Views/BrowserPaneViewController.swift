@@ -13,11 +13,15 @@ final class BrowserPaneViewController: NSViewController {
 
     weak var delegate: BrowserPaneDelegate?
 
+    /// Called on spacebar press. Return `true` if handled (e.g. audio play/pause), `false` to fall through to Quick Look.
+    var onSpacebarPressed: (() -> Bool)?
+
     private var tabs: [BrowserTabState] = []
     private(set) var activeTabIndex: Int = 0
     private var isActive: Bool = false
 
     private var iconStyle: IconStyle
+    private var showHiddenFiles: Bool
     private let tabBar = NSStackView()
     private let pathBarView = PathBarView()
     private let fileListViewController: FileListViewController
@@ -26,9 +30,10 @@ final class BrowserPaneViewController: NSViewController {
 
     // MARK: - Init
 
-    init(clipboardManager: ClipboardManager, iconStyle: IconStyle = .system) {
+    init(clipboardManager: ClipboardManager, iconStyle: IconStyle = .system, showHiddenFiles: Bool = true) {
         self.iconStyle = iconStyle
-        fileListViewController = FileListViewController(clipboardManager: clipboardManager, iconStyle: iconStyle)
+        self.showHiddenFiles = showHiddenFiles
+        fileListViewController = FileListViewController(clipboardManager: clipboardManager, iconStyle: iconStyle, showHiddenFiles: showHiddenFiles)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -267,6 +272,12 @@ final class BrowserPaneViewController: NSViewController {
         fileListViewController.setIconStyle(style)
     }
 
+    /// Updates the show hidden files setting and reloads the file list.
+    func setShowHiddenFiles(_ show: Bool) {
+        showHiddenFiles = show
+        fileListViewController.setShowHiddenFiles(show)
+    }
+
     // MARK: - Keyboard Navigation
 
     override func keyDown(with event: NSEvent) {
@@ -277,7 +288,10 @@ final class BrowserPaneViewController: NSViewController {
             fileListViewController.openSelectedItem()
         case 120 where flags.isEmpty: // F2 - rename
             fileListViewController.renameSelection(nil)
-        case 49 where flags.isEmpty: // Space - Quick Look
+        case 49 where flags.isEmpty: // Space - play/pause or Quick Look
+            if let handler = onSpacebarPressed, handler() {
+                break
+            }
             fileListViewController.toggleQuickLook()
         case 126 where flags.contains(.command): // Cmd+Up - parent directory
             goToParent()

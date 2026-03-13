@@ -28,6 +28,15 @@ final class PreviewHeaderView: NSView {
     private var whereValueLabel: NSTextField!
     private var copyPathButton: NSButton!
 
+    private var modeControl: NSSegmentedControl!
+    /// Called when the user toggles the Code/Preview segmented control.
+    /// Parameter is the selected segment index (0 = Code, 1 = Preview).
+    var onModeChanged: ((Int) -> Void)?
+
+    private var compactDetailLeadingToName: NSLayoutConstraint!
+    private var compactDetailTrailingToMode: NSLayoutConstraint!
+    private var compactDetailTrailingToDisclosure: NSLayoutConstraint!
+
     private var currentItem: FileItem?
 
     // MARK: - Constants
@@ -91,8 +100,17 @@ final class PreviewHeaderView: NSView {
         disclosureButton.imagePosition = .imageOnly
         disclosureButton.symbolConfiguration = .init(pointSize: 10, weight: .medium)
 
+        modeControl = NSSegmentedControl(labels: ["Code", "Preview"], trackingMode: .selectOne, target: self, action: #selector(modeControlChanged))
+        modeControl.translatesAutoresizingMaskIntoConstraints = false
+        modeControl.segmentStyle = .rounded
+        modeControl.font = NSFont.systemFont(ofSize: 10)
+        modeControl.controlSize = .mini
+        modeControl.selectedSegment = 1
+        modeControl.isHidden = true
+
         addSubview(iconView)
         addSubview(nameLabel)
+        addSubview(modeControl)
         addSubview(compactDetailLabel)
         addSubview(disclosureButton)
     }
@@ -178,16 +196,25 @@ final class PreviewHeaderView: NSView {
         clickable.translatesAutoresizingMaskIntoConstraints = false
         addSubview(clickable)
 
+        // Clickable area stops before the mode control so it doesn't steal clicks
         NSLayoutConstraint.activate([
             clickable.topAnchor.constraint(equalTo: topAnchor),
             clickable.leadingAnchor.constraint(equalTo: leadingAnchor),
-            clickable.trailingAnchor.constraint(equalTo: disclosureButton.leadingAnchor),
+            clickable.trailingAnchor.constraint(equalTo: modeControl.leadingAnchor, constant: -4),
             clickable.heightAnchor.constraint(equalToConstant: Layout.collapsedHeight),
         ])
     }
 
     private func layoutViews() {
         heightConstraint = heightAnchor.constraint(equalToConstant: Layout.collapsedHeight)
+
+        compactDetailLeadingToName = compactDetailLabel.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 8)
+        compactDetailLeadingToName.isActive = true
+
+        // Compact detail trailing — to mode control when visible, otherwise to disclosure
+        compactDetailTrailingToMode = compactDetailLabel.trailingAnchor.constraint(lessThanOrEqualTo: modeControl.leadingAnchor, constant: -6)
+        compactDetailTrailingToDisclosure = compactDetailLabel.trailingAnchor.constraint(lessThanOrEqualTo: disclosureButton.leadingAnchor, constant: -4)
+        compactDetailTrailingToDisclosure.isActive = true
 
         NSLayoutConstraint.activate([
             heightConstraint,
@@ -200,9 +227,11 @@ final class PreviewHeaderView: NSView {
             nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
             nameLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
 
-            compactDetailLabel.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 8),
-            compactDetailLabel.trailingAnchor.constraint(lessThanOrEqualTo: disclosureButton.leadingAnchor, constant: -4),
             compactDetailLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
+
+            // Mode control sits to the right, before the disclosure button
+            modeControl.trailingAnchor.constraint(equalTo: disclosureButton.leadingAnchor, constant: -6),
+            modeControl.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
 
             disclosureButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             disclosureButton.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
@@ -248,6 +277,19 @@ final class PreviewHeaderView: NSView {
         compactDetailLabel.stringValue = text
     }
 
+    /// Shows or hides the Code/Preview segmented control for markdown files.
+    func setMarkdownMode(_ show: Bool) {
+        modeControl.isHidden = !show
+        if show {
+            modeControl.selectedSegment = 1
+            compactDetailTrailingToDisclosure.isActive = false
+            compactDetailTrailingToMode.isActive = true
+        } else {
+            compactDetailTrailingToMode.isActive = false
+            compactDetailTrailingToDisclosure.isActive = true
+        }
+    }
+
     /// Updates the background layer for appearance changes.
     func updateAppearance() {
         layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
@@ -277,6 +319,10 @@ final class PreviewHeaderView: NSView {
         } completionHandler: { [weak self] in
             self?.superview?.layoutSubtreeIfNeeded()
         }
+    }
+
+    @objc private func modeControlChanged() {
+        onModeChanged?(modeControl.selectedSegment)
     }
 
     @objc private func copyPathClicked() {

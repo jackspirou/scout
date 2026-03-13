@@ -1,10 +1,12 @@
 import AppKit
+import Highlighter
 
 // MARK: - ImagePreviewViewController
 
 /// Displays an image file with a collapsible metadata header, media info section,
 /// and zoomable/pannable image canvas.
 /// Supports zoom (pinch, scroll-wheel, double-click) and drag-to-pan.
+/// For SVG files, supports a Code/Preview toggle to view raw SVG source.
 final class ImagePreviewViewController: NSViewController, PreviewChild {
     // MARK: - Properties
 
@@ -17,8 +19,16 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
     private var metadataTask: Task<Void, Never>?
     private var appearanceObservation: NSKeyValueObservation?
 
+    // SVG code view
+    private var codeScrollView: NSScrollView!
+    private var codeTextView: NSTextView!
+    private var codeRulerView: LineNumberRulerView!
+    private var highlighter: Highlighter?
+    private var isCodeMode = false
+
     private var imagePixelSize: NSSize = .zero
     private var isCentering = false
+    private var lastVisibleSize: NSSize = .zero
 
     // MARK: - Lifecycle
 
@@ -26,6 +36,7 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
         view = NSView()
 
         configureScrollView()
+        configureCodeView()
 
         // MediaInfoView starts hidden — shown once metadata loads.
         mediaInfoView.isHidden = true
@@ -35,14 +46,31 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
 
         layoutSubviews()
 
+        highlighter = Highlighter()
+
+        headerView.onModeChanged = { [weak self] segment in
+            self?.setSVGMode(segment)
+        }
+
         appearanceObservation = view.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             self?.headerView.updateAppearance()
             self?.mediaInfoView.updateAppearance()
+            self?.updateHighlighterTheme()
         }
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        guard imagePixelSize.width > 0 else { return }
+
+        // Use the scroll view's frame (not contentView.bounds) to detect
+        // visible area changes. bounds.size changes with magnification and
+        // creates a feedback loop during live resize; frame.size does not.
+        let frameSize = scrollView.frame.size
+        if frameSize != lastVisibleSize {
+            lastVisibleSize = frameSize
+            applyFitMagnification()
+        }
         centerImageIfNeeded()
     }
 
@@ -63,7 +91,7 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
         scrollView.borderType = .noBorder
 
         scrollView.allowsMagnification = true
-        scrollView.minMagnification = 0.1
+        scrollView.minMagnification = 0.01
         scrollView.maxMagnification = 10.0
 
         imageCanvas = ImageCanvasView()
@@ -78,7 +106,40 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
         view.addSubview(scrollView)
     }
 
+    private func configureCodeView() {
+        codeScrollView = NSScrollView()
+        codeScrollView.translatesAutoresizingMaskIntoConstraints = false
+        codeScrollView.hasVerticalScroller = true
+        codeScrollView.autohidesScrollers = true
+        codeScrollView.drawsBackground = true
+        codeScrollView.backgroundColor = .textBackgroundColor
+        codeScrollView.isHidden = true
+
+        codeTextView = NSTextView()
+        codeTextView.isEditable = false
+        codeTextView.isSelectable = true
+        codeTextView.usesFindBar = true
+        codeTextView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        codeTextView.textColor = .labelColor
+        codeTextView.drawsBackground = false
+        codeTextView.isVerticallyResizable = true
+        codeTextView.isHorizontallyResizable = false
+        codeTextView.autoresizingMask = [.width]
+        codeTextView.textContainer?.widthTracksTextView = true
+        codeTextView.textContainerInset = NSSize(width: 4, height: 8)
+
+        codeScrollView.documentView = codeTextView
+        codeRulerView = LineNumberRulerView(textView: codeTextView, scrollView: codeScrollView)
+        codeRulerView.isHidden = true
+
+        view.addSubview(codeRulerView)
+        view.addSubview(codeScrollView)
+    }
+
     private func layoutSubviews() {
+        let rulerWidthConstraint = codeRulerView.widthAnchor.constraint(equalToConstant: codeRulerView.gutterWidth)
+        codeRulerView.setWidthConstraint(rulerWidthConstraint)
+
         NSLayoutConstraint.activate([
             headerView.topAnchor.constraint(equalTo: view.topAnchor),
             headerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -92,6 +153,16 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            codeRulerView.topAnchor.constraint(equalTo: mediaInfoView.bottomAnchor),
+            codeRulerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            codeRulerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            rulerWidthConstraint,
+
+            codeScrollView.topAnchor.constraint(equalTo: mediaInfoView.bottomAnchor),
+            codeScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            codeScrollView.leadingAnchor.constraint(equalTo: codeRulerView.trailingAnchor),
+            codeScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
     }
 
@@ -103,11 +174,21 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
         currentItem = item
         imagePixelSize = .zero
         mediaInfoView.isHidden = true
+        isCodeMode = false
 
         headerView.update(with: item)
+        headerView.setMarkdownMode(item.isSVG)
+
+        // Reset to preview mode
+        scrollView.isHidden = false
+        codeScrollView.isHidden = true
+        codeRulerView.isHidden = true
 
         currentLoadTask = Task { [weak self] in
             await self?.loadImage(at: item.url, item: item)
+            if item.isSVG {
+                await self?.loadSVGSource(item: item)
+            }
         }
 
         metadataTask = Task { [weak self] in
@@ -120,9 +201,66 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
         metadataTask?.cancel()
         currentItem = nil
         imagePixelSize = .zero
+        isCodeMode = false
         imageCanvas.image = nil
         imageCanvas.setFrameSize(.zero)
+        codeTextView.string = ""
         mediaInfoView.isHidden = true
+    }
+
+    // MARK: - SVG Mode Switching
+
+    private func setSVGMode(_ segment: Int) {
+        if segment == 0 {
+            // Code mode
+            isCodeMode = true
+            scrollView.isHidden = true
+            codeScrollView.isHidden = false
+            codeRulerView.isHidden = false
+        } else {
+            // Preview mode (image)
+            isCodeMode = false
+            scrollView.isHidden = false
+            codeScrollView.isHidden = true
+            codeRulerView.isHidden = true
+        }
+    }
+
+    private func loadSVGSource(item: FileItem) async {
+        do {
+            let content = try await Task.detached {
+                try String(contentsOf: item.url, encoding: .utf8)
+            }.value
+
+            guard !Task.isCancelled, currentItem?.url == item.url else { return }
+
+            updateHighlighterTheme()
+            let attributedString: NSAttributedString
+            if let highlighter, let highlighted = highlighter.highlight(content, as: "xml") {
+                let cleaned = NSMutableAttributedString(attributedString: highlighted)
+                cleaned.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: cleaned.length))
+                attributedString = cleaned
+            } else {
+                attributedString = NSAttributedString(string: content, attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: NSColor.labelColor,
+                ])
+            }
+
+            codeTextView.textStorage?.setAttributedString(attributedString)
+            codeTextView.scrollToBeginningOfDocument(nil)
+            codeRulerView.needsDisplay = true
+        } catch {
+            guard !Task.isCancelled, currentItem?.url == item.url else { return }
+            codeTextView.string = ""
+        }
+    }
+
+    private func updateHighlighterTheme() {
+        let isDark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let theme = isDark ? "atom-one-dark" : "atom-one-light"
+        highlighter?.setTheme(theme, withFont: "Menlo-Regular", ofSize: 12.0)
+        highlighter?.theme.themeBackgroundColour = .clear
     }
 
     // MARK: - Zoom
@@ -149,9 +287,18 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
         updateZoomLabel()
     }
 
+    private func applyFitMagnification() {
+        let fitMag = fitMagnification()
+        scrollView.minMagnification = min(fitMag, 0.01)
+        scrollView.magnification = fitMag
+        updateZoomLabel()
+    }
+
     private func fitMagnification() -> CGFloat {
         guard imagePixelSize.width > 0, imagePixelSize.height > 0 else { return 1.0 }
-        let visibleSize = scrollView.contentView.bounds.size
+        // Use the scroll view's frame size (stable during magnification changes)
+        // rather than contentView.bounds (which scales inversely with magnification).
+        let visibleSize = scrollView.frame.size
         let scaleX = visibleSize.width / imagePixelSize.width
         let scaleY = visibleSize.height / imagePixelSize.height
         return min(scaleX, scaleY, 1.0)
@@ -184,18 +331,25 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
                     throw CocoaError(.fileReadCorruptFile)
                 }
 
-                var width = 0
-                var height = 0
+                // Get actual pixel dimensions for display in the header.
+                var pixelWidth = 0
+                var pixelHeight = 0
                 if let rep = image.representations.first {
-                    width = rep.pixelsWide
-                    height = rep.pixelsHigh
+                    pixelWidth = rep.pixelsWide
+                    pixelHeight = rep.pixelsHigh
                 }
-                if width <= 0 || height <= 0 {
-                    width = Int(image.size.width)
-                    height = Int(image.size.height)
+                if pixelWidth <= 0 || pixelHeight <= 0 {
+                    pixelWidth = Int(image.size.width)
+                    pixelHeight = Int(image.size.height)
                 }
 
-                return (image, NSSize(width: width, height: height))
+                // Normalize image.size to match pixel dimensions so that
+                // NSImageView with .scaleNone renders at pixel size.
+                // Without this, JPEGs with DPI metadata (e.g. 300 DPI)
+                // render at point size which is smaller than the canvas.
+                image.size = NSSize(width: pixelWidth, height: pixelHeight)
+
+                return (image, NSSize(width: pixelWidth, height: pixelHeight))
             }.value
 
             guard !Task.isCancelled, currentItem?.url == item.url else { return }
@@ -204,9 +358,10 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
             imageCanvas.image = image
             imageCanvas.setFrameSize(dimensions)
 
-            scrollView.magnification = fitMagnification()
+            // Reset last visible size so viewDidLayout re-fits on next pass.
+            lastVisibleSize = .zero
+            applyFitMagnification()
             centerImageIfNeeded()
-            updateZoomLabel()
         } catch {
             guard !Task.isCancelled, currentItem?.url == item.url else { return }
             imageCanvas.image = nil
@@ -308,15 +463,37 @@ final class ImagePreviewViewController: NSViewController, PreviewChild {
 
 // MARK: - ImageCanvasView
 
-/// Simple view that draws an image filling its bounds. Sized to the image's
-/// pixel dimensions and used as the document view of a zooming scroll view.
+/// Simple view that displays an image at its native pixel dimensions.
+/// Uses NSImageView with `.scaleNone` so all scaling is handled exclusively
+/// by the parent NSScrollView's magnification system. Supports animated GIFs.
 private final class ImageCanvasView: NSView {
-    var image: NSImage? { didSet { needsDisplay = true } }
+    var image: NSImage? {
+        didSet {
+            imageView.image = image
+            imageView.animates = true
+        }
+    }
+
     var onDoubleClick: (() -> Void)?
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let image else { return }
-        image.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1.0)
+    private let imageView = NSImageView()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        imageView.imageScaling = .scaleNone
+        imageView.animates = true
+        imageView.isEditable = false
+        addSubview(imageView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        // Pin imageView to exact same size — no autoresizing mask to avoid
+        // conflicts with NSScrollView's magnification transform.
+        imageView.frame = bounds
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -332,11 +509,17 @@ private final class ImageCanvasView: NSView {
 
 /// NSClipView subclass that centers its document view when the document
 /// is smaller than the visible area, giving a centered image appearance.
+/// All comparisons use the document view's frame (unscaled), and proposed
+/// bounds are also in document coordinates (NSScrollView divides by
+/// magnification before calling this method).
 private final class CenteringClipView: NSClipView {
     override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
         var rect = super.constrainBoundsRect(proposedBounds)
         guard let documentView else { return rect }
 
+        // Both docFrame and proposedBounds are in document (unscaled) coordinates.
+        // NSScrollView already divides the clip view's visual size by magnification
+        // before passing it here, so direct comparison is correct.
         let docFrame = documentView.frame
 
         if docFrame.width < proposedBounds.width {

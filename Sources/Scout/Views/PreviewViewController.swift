@@ -27,6 +27,11 @@ final class PreviewViewController: NSViewController {
     private let directoryPreview = DirectoryPreviewViewController()
     private weak var activeChild: NSViewController?
 
+    /// Called when the user double-clicks a directory in the directory preview.
+    var onNavigate: ((URL) -> Void)? {
+        didSet { directoryPreview.onNavigate = onNavigate }
+    }
+
     // MARK: - Lifecycle
 
     override func loadView() {
@@ -100,6 +105,16 @@ final class PreviewViewController: NSViewController {
             placeholderLabel.stringValue = "No preview available"
             placeholderLabel.isHidden = false
         }
+    }
+
+    /// Returns `true` if the active preview handles spacebar for play/pause.
+    var handlesSpacebar: Bool {
+        activeChild is AudioPreviewViewController
+    }
+
+    /// Forwards a spacebar press to the active audio preview.
+    func togglePlayback() {
+        (activeChild as? AudioPreviewViewController)?.togglePlayPause()
     }
 
     /// Clears the preview and shows the default placeholder.

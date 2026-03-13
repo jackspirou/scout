@@ -47,6 +47,10 @@ final class DirectoryMonitor {
     private var watchedURL: URL?
     private var knownPaths: Set<String> = []
 
+    /// Lock protecting mutable state (`knownPaths`, `watchedURL`) that may be
+    /// accessed from the FSEvents dispatch queue callback.
+    private let lock = NSLock()
+
     // MARK: - Public API
 
     /// Starts monitoring the given directory for file system changes.
@@ -57,8 +61,10 @@ final class DirectoryMonitor {
     func startMonitoring(url: URL, knownPaths: Set<String>) {
         stopMonitoring()
 
+        lock.lock()
         watchedURL = url
         self.knownPaths = knownPaths
+        lock.unlock()
 
         let pathToWatch = url.path as CFString
         let pathsToWatch = [pathToWatch] as CFArray
@@ -98,7 +104,10 @@ final class DirectoryMonitor {
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
         streamRef = nil
+
+        lock.lock()
         watchedURL = nil
+        lock.unlock()
     }
 
     deinit {
@@ -109,9 +118,15 @@ final class DirectoryMonitor {
 
     /// Called from the C callback to process a batch of FSEvents.
     fileprivate func handleEvents(paths: [String], flags: UnsafePointer<FSEventStreamEventFlags>, count: Int) {
-        assert(Thread.isMainThread, "handleEvents must be called on the main thread")
-        guard let watchedURL else { return }
+        lock.lock()
+        guard let watchedURL else {
+            lock.unlock()
+            return
+        }
         let watchedPath = watchedURL.path
+        // Snapshot knownPaths under the lock for use during event processing.
+        var currentKnownPaths = knownPaths
+        lock.unlock()
 
         var addedURLs: [URL] = []
         var removedURLs: [URL] = []
@@ -145,7 +160,7 @@ final class DirectoryMonitor {
             let isMetaMod = flag & UInt32(kFSEventStreamEventFlagItemInodeMetaMod) != 0
 
             let fileExists = FileManager.default.fileExists(atPath: path)
-            let wasKnown = knownPaths.contains(path)
+            let wasKnown = currentKnownPaths.contains(path)
 
             if isRenamed {
                 // Renames produce a pair: one event for the old path (gone) and one for the new path (exists).
@@ -165,11 +180,15 @@ final class DirectoryMonitor {
 
         // Update known paths to reflect the new state.
         for url in addedURLs {
-            knownPaths.insert(url.path)
+            currentKnownPaths.insert(url.path)
         }
         for url in removedURLs {
-            knownPaths.remove(url.path)
+            currentKnownPaths.remove(url.path)
         }
+
+        lock.lock()
+        knownPaths = currentKnownPaths
+        lock.unlock()
 
         // Build the list of change events.
         var events: [DirectoryChangeEvent] = []

@@ -27,6 +27,7 @@ let package = Package(
             ],
             resources: [
                 .process("Resources/Assets.xcassets"),
+                .copy("Resources/markdown-template.html"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v5),

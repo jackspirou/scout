@@ -44,6 +44,7 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
         static let lastSession = "lastSession"
         static let recentLocations = "recentLocations"
         static let iconStyle = "scout.iconStyle"
+        static let showHiddenFiles = "scout.showHiddenFiles"
     }
 
     private enum FileName {
@@ -230,6 +231,17 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
         guard let raw = defaults.string(forKey: StoreKey.iconStyle),
               let style = IconStyle(rawValue: raw) else { return .system }
         return style
+    }
+
+    // MARK: - Show Hidden Files
+
+    func saveShowHiddenFiles(_ show: Bool) {
+        defaults.set(show, forKey: StoreKey.showHiddenFiles)
+    }
+
+    func loadShowHiddenFiles() -> Bool {
+        guard defaults.object(forKey: StoreKey.showHiddenFiles) != nil else { return true }
+        return defaults.bool(forKey: StoreKey.showHiddenFiles)
     }
 
     // MARK: - Private Helpers

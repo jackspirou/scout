@@ -43,6 +43,9 @@ final class TransferQueueController {
     var conflictResolver: ((URL, URL) async -> ConflictResolution)?
 
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
+    /// These flags are safe from data races because the entire class is `@MainActor`-isolated.
+    /// All async methods (`executeTransfer`, `transferFiles`, `resolveConflict`) inherit main-actor
+    /// isolation, so reads and writes to these flags always occur on the main thread.
     private var skipAllConflicts = false
     private var replaceAllConflicts = false
 

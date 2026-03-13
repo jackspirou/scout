@@ -14,4 +14,6 @@ protocol PersistenceServiceProtocol {
     func loadRecentLocations() -> [URL]
     func saveIconStyle(_ style: IconStyle)
     func loadIconStyle() -> IconStyle
+    func saveShowHiddenFiles(_ show: Bool)
+    func loadShowHiddenFiles() -> Bool
 }

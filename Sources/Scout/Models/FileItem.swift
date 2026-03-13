@@ -74,6 +74,21 @@ struct FileItem: Identifiable, Hashable {
         return url.pathExtension.lowercased() == "pdf"
     }
 
+    /// Whether this file is a Markdown document.
+    var isMarkdown: Bool {
+        Self.markdownExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether this file is an HTML document.
+    var isHTML: Bool {
+        Self.htmlExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether this file is an SVG image.
+    var isSVG: Bool {
+        url.pathExtension.lowercased() == "svg"
+    }
+
     /// The file extension (without leading dot), or an empty string if none.
     var `extension`: String {
         url.pathExtension
@@ -281,5 +296,13 @@ struct FileItem: Identifiable, Hashable {
     private static let audioExtensions: Set<String> = [
         "mp3", "m4a", "wav", "aac", "flac", "ogg", "wma",
         "aiff", "aif", "opus",
+    ]
+
+    private static let markdownExtensions: Set<String> = [
+        "md", "markdown", "mdown", "mkd",
+    ]
+
+    private static let htmlExtensions: Set<String> = [
+        "html", "htm",
     ]
 }

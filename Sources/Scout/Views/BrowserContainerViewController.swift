@@ -14,20 +14,30 @@ final class BrowserContainerViewController: NSViewController {
     private let splitView = NSSplitView()
     private let clipboardManager: ClipboardManager
     private var iconStyle: IconStyle
+    private var showHiddenFiles: Bool
     private let leftPane: BrowserPaneViewController
     private let rightPane: BrowserPaneViewController
 
     weak var delegate: BrowserContainerDelegate?
 
+    /// Called on spacebar press. Return `true` if handled, `false` to fall through to Quick Look.
+    var onSpacebarPressed: (() -> Bool)? {
+        didSet {
+            leftPane.onSpacebarPressed = onSpacebarPressed
+            rightPane.onSpacebarPressed = onSpacebarPressed
+        }
+    }
+
     private var isDualPane: Bool = false
 
     // MARK: - Init
 
-    init(clipboardManager: ClipboardManager = ClipboardManager(), iconStyle: IconStyle = .system) {
+    init(clipboardManager: ClipboardManager = ClipboardManager(), iconStyle: IconStyle = .system, showHiddenFiles: Bool = true) {
         self.clipboardManager = clipboardManager
         self.iconStyle = iconStyle
-        leftPane = BrowserPaneViewController(clipboardManager: clipboardManager, iconStyle: iconStyle)
-        rightPane = BrowserPaneViewController(clipboardManager: clipboardManager, iconStyle: iconStyle)
+        self.showHiddenFiles = showHiddenFiles
+        leftPane = BrowserPaneViewController(clipboardManager: clipboardManager, iconStyle: iconStyle, showHiddenFiles: showHiddenFiles)
+        rightPane = BrowserPaneViewController(clipboardManager: clipboardManager, iconStyle: iconStyle, showHiddenFiles: showHiddenFiles)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -135,6 +145,13 @@ final class BrowserContainerViewController: NSViewController {
         iconStyle = style
         leftPane.setIconStyle(style)
         rightPane.setIconStyle(style)
+    }
+
+    /// Updates the show hidden files setting on both panes.
+    func setShowHiddenFiles(_ show: Bool) {
+        showHiddenFiles = show
+        leftPane.setShowHiddenFiles(show)
+        rightPane.setShowHiddenFiles(show)
     }
 
     /// The inactive pane controller (nil if single-pane mode).

@@ -39,6 +39,7 @@ final class FileListViewController: NSViewController {
     private let clipboardManager: ClipboardManager
 
     private var iconStyle: IconStyle
+    private(set) var showHiddenFiles: Bool = true
     private var allItems: [FileItem] = []
     private var sortedItems: [FileItem] = []
     private var urlToIndex: [URL: Int] = [:]
@@ -53,8 +54,9 @@ final class FileListViewController: NSViewController {
 
     // MARK: - Init
 
-    init(clipboardManager: ClipboardManager = ClipboardManager(), iconStyle: IconStyle = .system) {
+    init(clipboardManager: ClipboardManager = ClipboardManager(), iconStyle: IconStyle = .system, showHiddenFiles: Bool = true) {
         self.iconStyle = iconStyle
+        self.showHiddenFiles = showHiddenFiles
         self.clipboardManager = clipboardManager
         super.init(nibName: nil, bundle: nil)
     }
@@ -188,7 +190,7 @@ final class FileListViewController: NSViewController {
         loadingTask = Task { [weak self] in
             guard let self else { return }
 
-            let items = (try? await self.fileSystemService.contentsOfDirectory(at: url)) ?? []
+            let items = (try? await self.fileSystemService.contentsOfDirectory(at: url, showHiddenFiles: self.showHiddenFiles)) ?? []
 
             guard !Task.isCancelled else { return }
 
@@ -196,6 +198,7 @@ final class FileListViewController: NSViewController {
                 self.allItems = items
                 self.sortItems()
                 self.tableView.reloadData()
+                self.tableView.scrollRowToVisible(0)
                 self.delegate?.fileListViewDidFinishLoading(self, itemCount: self.sortedItems.count)
             }
         }
@@ -205,6 +208,14 @@ final class FileListViewController: NSViewController {
     func setIconStyle(_ style: IconStyle) {
         iconStyle = style
         Task { await fileSystemService.setIconStyle(style) }
+        if let url = currentDirectoryURL {
+            loadDirectory(at: url)
+        }
+    }
+
+    /// Updates the show hidden files setting and reloads the current directory if one is loaded.
+    func setShowHiddenFiles(_ show: Bool) {
+        showHiddenFiles = show
         if let url = currentDirectoryURL {
             loadDirectory(at: url)
         }
@@ -450,7 +461,7 @@ final class FileListViewController: NSViewController {
 
                 guard let newItem = FileItem.create(from: url, iconStyle: iconStyle) else { continue }
                 // Skip hidden files to match loadDirectory behavior.
-                if newItem.isHidden { continue }
+                if !showHiddenFiles && newItem.isHidden { continue }
 
                 allItems.append(newItem)
                 let insertionIndex = sortedInsertionIndex(for: newItem)
@@ -474,7 +485,7 @@ final class FileListViewController: NSViewController {
                 // Refresh metadata by creating a new FileItem.
                 guard let refreshedItem = FileItem.create(from: url, iconStyle: iconStyle) else { continue }
                 // Skip hidden files.
-                if refreshedItem.isHidden { continue }
+                if !showHiddenFiles && refreshedItem.isHidden { continue }
 
                 // Replace in allItems.
                 if let allIndex = allItems.firstIndex(where: { $0.url == url }) {
@@ -553,7 +564,7 @@ final class FileListViewController: NSViewController {
     @objc func contextGetInfo(_ sender: NSMenuItem) {
         let urls = selectedItems().map(\.url)
         guard !urls.isEmpty else { return }
-        NSWorkspace.shared.activateFileViewerSelecting(urls)
+        FinderHelper.showGetInfo(for: urls)
     }
 
     @objc func contextRename(_ sender: NSMenuItem) {
@@ -808,6 +819,7 @@ extension FileListViewController: NSTableViewDelegate {
             break
         }
 
+        cell.alphaValue = item.isHidden ? 0.5 : 1.0
         return cell
     }
 

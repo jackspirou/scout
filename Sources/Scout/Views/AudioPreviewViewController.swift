@@ -288,6 +288,7 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
 
         // Create player (don't autoplay)
         let newPlayer = AVPlayer(url: item.url)
+        newPlayer.automaticallyWaitsToMinimizeStalling = false
         player = newPlayer
         setupTimeObserver()
         observePlayerStatus()
@@ -336,6 +337,7 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
 
     private func stopPlayback() {
         player?.pause()
+        realtimeWaveView.stopAnimating()
         audioLevelTap.remove()
         removeTimeObserver()
         statusObservation?.invalidate()
@@ -399,12 +401,14 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
 
     // MARK: - Actions
 
-    @objc private func togglePlayPause() {
+    @objc func togglePlayPause() {
         guard let player else { return }
         if player.rate > 0 {
             player.pause()
+            realtimeWaveView.stopAnimating()
             updatePlayPauseIcon(playing: false)
         } else {
+            realtimeWaveView.startAnimating()
             player.play()
             updatePlayPauseIcon(playing: true)
         }
@@ -436,6 +440,7 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
         guard let finishedItem = notification.object as? AVPlayerItem,
               finishedItem === player?.currentItem else { return }
         player?.seek(to: .zero)
+        realtimeWaveView.stopAnimating()
         updatePlayPauseIcon(playing: false)
         waveformView.progress = 0
         timeSlider.doubleValue = 0
@@ -445,7 +450,11 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
     private func updatePlayPauseIcon(playing: Bool) {
         let symbolName = playing ? "pause.fill" : "play.fill"
         let description = playing ? "Pause" : "Play"
-        playPauseButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: description)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            ctx.allowsImplicitAnimation = true
+            playPauseButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: description)
+        }
     }
 
     // MARK: - Metadata
