@@ -15,4 +15,5 @@ protocol FileSystemServiceProtocol: Actor {
     func renameItem(at url: URL, to newName: String) async throws -> URL
     func exists(at url: URL) -> Bool
     func batchRename(urls: [URL], pattern: BatchRenamePattern) async throws -> [URL]
+    func createAlias(for sourceURL: URL, at destinationDirectory: URL) throws -> URL
 }

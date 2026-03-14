@@ -26,7 +26,7 @@ import Foundation
 
     nonisolated init(
         pasteboard: NSPasteboard = .general,
-        fileSystemService: FileSystemService = FileSystemService()
+        fileSystemService: FileSystemService = .shared
     ) {
         self.pasteboard = pasteboard
         self.fileSystemService = fileSystemService

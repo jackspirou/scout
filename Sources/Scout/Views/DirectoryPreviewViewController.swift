@@ -19,7 +19,7 @@ final class DirectoryPreviewViewController: NSViewController, PreviewChild {
     /// Cached directory contents keyed by URL.
     private var childrenCache: [URL: [FileItem]] = [:]
     private var expandTasks: [Task<Void, Never>] = []
-    private let fileSystemService = FileSystemService()
+    private let fileSystemService = FileSystemService.shared
 
     private var appearanceObservation: NSKeyValueObservation?
 

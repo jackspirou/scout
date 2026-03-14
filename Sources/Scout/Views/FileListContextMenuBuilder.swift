@@ -5,22 +5,23 @@ import UniformTypeIdentifiers
 /// logic from `FileListViewController` while keeping `@objc` action methods
 /// on the view controller (responder chain).
 enum FileListContextMenuBuilder {
-    // MARK: - Selectors (mirror the @objc methods on FileListViewController)
+    // MARK: - Selectors (string-based so any target VC can respond)
 
-    private static let openSelector = #selector(FileListViewController.contextOpen(_:))
-    private static let openWithSelector = #selector(FileListViewController.contextOpenWith(_:))
-    private static let getInfoSelector = #selector(FileListViewController.contextGetInfo(_:))
-    private static let renameSelector = #selector(FileListViewController.contextRename(_:))
-    private static let copySelector = #selector(FileListViewController.contextCopy(_:))
-    private static let copyPathSelector = #selector(FileListViewController.contextCopyPath(_:))
-    private static let cutSelector = #selector(FileListViewController.contextCut(_:))
-    private static let pasteSelector = #selector(FileListViewController.contextPaste(_:))
-    private static let duplicateSelector = #selector(FileListViewController.contextDuplicate(_:))
-    private static let moveToTrashSelector = #selector(FileListViewController.contextMoveToTrash(_:))
-    private static let quickLookSelector = #selector(FileListViewController.contextQuickLook(_:))
-    private static let showInFinderSelector = #selector(FileListViewController.contextShowInFinder(_:))
-    private static let compressSelector = #selector(FileListViewController.contextCompress(_:))
-    private static let newFolderSelector = #selector(FileListViewController.contextNewFolder(_:))
+    private static let openSelector = NSSelectorFromString("contextOpen:")
+    private static let openWithSelector = NSSelectorFromString("contextOpenWith:")
+    private static let getInfoSelector = NSSelectorFromString("contextGetInfo:")
+    private static let renameSelector = NSSelectorFromString("contextRename:")
+    private static let copySelector = NSSelectorFromString("contextCopy:")
+    private static let copyPathSelector = NSSelectorFromString("contextCopyPath:")
+    private static let cutSelector = NSSelectorFromString("contextCut:")
+    private static let pasteSelector = NSSelectorFromString("contextPaste:")
+    private static let duplicateSelector = NSSelectorFromString("contextDuplicate:")
+    private static let makeAliasSelector = NSSelectorFromString("makeAlias:")
+    private static let moveToTrashSelector = NSSelectorFromString("contextMoveToTrash:")
+    private static let quickLookSelector = NSSelectorFromString("contextQuickLook:")
+    private static let showInFinderSelector = NSSelectorFromString("contextShowInFinder:")
+    private static let compressSelector = NSSelectorFromString("contextCompress:")
+    private static let newFolderSelector = NSSelectorFromString("contextNewFolder:")
 
     // MARK: - Public API
 
@@ -87,6 +88,12 @@ enum FileListContextMenuBuilder {
         let duplicateItem = NSMenuItem(title: "Duplicate", action: duplicateSelector, keyEquivalent: "")
         duplicateItem.target = target
         menu.addItem(duplicateItem)
+
+        // Make Alias
+        let makeAliasItem = NSMenuItem(title: "Make Alias", action: makeAliasSelector, keyEquivalent: "l")
+        makeAliasItem.target = target
+        makeAliasItem.keyEquivalentModifierMask = [.command]
+        menu.addItem(makeAliasItem)
 
         menu.addItem(NSMenuItem.separator())
 

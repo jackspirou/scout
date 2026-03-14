@@ -40,6 +40,8 @@ enum FileSystemError: LocalizedError {
 /// Actor-based service for file system operations.
 /// Uses FileManager and POSIX APIs for performance-sensitive paths.
 actor FileSystemService: FileSystemServiceProtocol {
+    static let shared = FileSystemService()
+
     private let fileManager: FileManager
     var iconStyle: IconStyle
 
@@ -325,6 +327,51 @@ actor FileSystemService: FileSystemServiceProtocol {
         }
 
         return renamedURLs
+    }
+
+    // MARK: - Create Alias
+
+    /// Creates a Finder alias for the source URL in the destination directory.
+    /// Returns the URL of the created alias file.
+    nonisolated func createAlias(for sourceURL: URL, at destinationDirectory: URL) throws -> URL {
+        let fm = FileManager.default
+
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        let ext = sourceURL.pathExtension
+        let aliasBaseName = ext.isEmpty ? "\(baseName) alias" : "\(baseName) alias.\(ext)"
+
+        var aliasURL = destinationDirectory.appendingPathComponent(aliasBaseName)
+        if fm.fileExists(atPath: aliasURL.path) {
+            var counter = 2
+            let cap = 1000
+            while counter <= cap {
+                let numberedName: String
+                if ext.isEmpty {
+                    numberedName = "\(baseName) alias \(counter)"
+                } else {
+                    numberedName = "\(baseName) alias \(counter).\(ext)"
+                }
+                aliasURL = destinationDirectory.appendingPathComponent(numberedName)
+                if !fm.fileExists(atPath: aliasURL.path) {
+                    break
+                }
+                counter += 1
+                if counter > cap {
+                    throw FileSystemError.operationFailed(
+                        "Could not find unique alias name after \(cap) attempts"
+                    )
+                }
+            }
+        }
+
+        let bookmarkData = try sourceURL.bookmarkData(
+            options: .suitableForBookmarkFile,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        try NSURL.writeBookmarkData(bookmarkData, to: aliasURL, options: 0)
+
+        return aliasURL
     }
 
     // MARK: - Private Helpers

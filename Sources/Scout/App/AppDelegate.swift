@@ -68,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Properties
 
     private var windowControllers: [MainWindowController] = []
+    private var settingsWindowController: SettingsWindowController?
+    private var connectToServerController: ConnectToServerWindowController?
+    private var goToPathController: GoToPathWindowController?
+    private var commandPaletteController: CommandPaletteWindowController?
 
     // MARK: - NSApplicationDelegate
 
@@ -152,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menuItem = buildMenu(title: "", items: [
             .item("About \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator,
-            .item("Settings...", action: nil, key: ","),
+            .item("Settings...", action: #selector(handleSettings(_:)), key: ","),
             .separator,
             .submenu("Services", items: []),
             .separator,
@@ -217,8 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .item(
                 "Duplicate",
                 action: #selector(FileListViewController.duplicateSelection(_:)),
-                key: "d",
-                modifiers: [.command, .shift]
+                key: "d"
             ),
             .item("Select All", action: #selector(NSText.selectAll(_:)), key: "a"),
             .separator,
@@ -237,7 +240,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildViewMenu() -> NSMenuItem {
         buildMenu(title: "View", items: [
-            .item("Toggle Dual Pane", action: #selector(handleToggleDualPane(_:)), key: "d"),
+            .item(
+                "Toggle Sidebar",
+                action: #selector(handleToggleSidebar(_:)),
+                key: "s",
+                modifiers: [.command, .option]
+            ),
+            .item("Toggle Dual Pane", action: #selector(handleToggleDualPane(_:)), key: "d", modifiers: [.command, .option]),
             .item(
                 "Toggle Preview",
                 action: #selector(handleTogglePreview(_:)),
@@ -283,6 +292,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .item("Desktop", action: #selector(handleGoDesktop(_:))),
             .item("Documents", action: #selector(handleGoDocuments(_:))),
             .item("Downloads", action: #selector(handleGoDownloads(_:))),
+            .separator,
+            .item("Connect to Server...", action: #selector(handleConnectToServer(_:)), key: "k"),
         ])
     }
 
@@ -313,11 +324,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu Actions
 
     @objc private func handleNewTab(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.openNewTab()
     }
 
     @objc private func handleCloseTab(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.closeCurrentTab()
     }
 
     @objc private func handleNewWindow(_ sender: Any?) {
@@ -343,43 +356,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleCloseWindow(_ sender: Any?) {
-        NSApp.keyWindow?.close()
+        guard let window = NSApp.keyWindow,
+              window.windowController is MainWindowController else { return }
+        window.close()
     }
 
     @objc private func handleToggleDualPane(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.toggleDualPane()
     }
 
     @objc private func handleTogglePreview(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.togglePreview()
+    }
+
+    @objc private func handleToggleSidebar(_ sender: Any?) {
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.toggleSidebar()
     }
 
     @objc private func handleCommandPalette(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let palette = CommandPaletteWindowController(actions: buildPaletteActions(for: windowController))
+        commandPaletteController = palette
+        palette.showPalette(relativeTo: windowController.window)
     }
 
     @objc private func handleGoToPath(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let goToPath = GoToPathWindowController(currentDirectoryURL: windowController.currentURL(), onNavigate: { [weak windowController] url in
+            windowController?.navigateToURL(url)
+        })
+        goToPathController = goToPath
+        goToPath.showPanel(relativeTo: windowController.window)
     }
 
     @objc private func handleSearch(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.focusSearchField()
     }
 
     @objc private func handleGoHome(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        windowController.navigateToURL(FileManager.default.homeDirectoryForCurrentUser)
     }
 
     @objc private func handleGoDesktop(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        windowController.navigateToURL(home.appendingPathComponent("Desktop"))
     }
 
     @objc private func handleGoDocuments(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        windowController.navigateToURL(home.appendingPathComponent("Documents"))
     }
 
     @objc private func handleGoDownloads(_ sender: Any?) {
-        // Will be dispatched to the active window controller via responder chain
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        windowController.navigateToURL(home.appendingPathComponent("Downloads"))
+    }
+
+    @objc private func handleSettings(_ sender: Any?) {
+        if let existing = settingsWindowController {
+            existing.showWindow(nil)
+            existing.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        let settings = SettingsWindowController()
+        settingsWindowController = settings
+        if let window = settings.window {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(settingsWindowWillClose(_:)),
+                name: NSWindow.willCloseNotification,
+                object: window
+            )
+        }
+        settings.showWindow(nil)
+    }
+
+    @objc private func settingsWindowWillClose(_ notification: Notification) {
+        settingsWindowController = nil
+    }
+
+    @objc private func handleConnectToServer(_ sender: Any?) {
+        if let existing = connectToServerController {
+            existing.showWindow(nil)
+            existing.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        let controller = ConnectToServerWindowController()
+        connectToServerController = controller
+        if let window = controller.window {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(connectToServerWindowWillClose(_:)),
+                name: NSWindow.willCloseNotification,
+                object: window
+            )
+        }
+        controller.showWindow(nil)
+    }
+
+    @objc private func connectToServerWindowWillClose(_ notification: Notification) {
+        connectToServerController = nil
     }
 
     // MARK: - Hidden Files Action
@@ -403,27 +487,103 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
         windowController.setIconStyle(style)
     }
+
+    // MARK: - Palette Actions Builder
+
+    private func buildPaletteActions(for windowController: MainWindowController) -> [PaletteAction] {
+        [
+            PaletteAction(name: "New Tab", shortcut: "⌘T", icon: nil) { [weak windowController] in
+                windowController?.openNewTab()
+            },
+            PaletteAction(name: "Close Tab", shortcut: "⌘W", icon: nil) { [weak windowController] in
+                windowController?.closeCurrentTab()
+            },
+            PaletteAction(name: "Toggle Dual Pane", shortcut: "⌥⌘D", icon: nil) { [weak windowController] in
+                windowController?.toggleDualPane()
+            },
+            PaletteAction(name: "Toggle Preview", shortcut: "⇧⌘Space", icon: nil) { [weak windowController] in
+                windowController?.togglePreview()
+            },
+            PaletteAction(name: "Toggle Sidebar", shortcut: "⌥⌘S", icon: nil) { [weak windowController] in
+                windowController?.toggleSidebar()
+            },
+            PaletteAction(name: "Go Home", shortcut: "⇧⌘H", icon: nil) { [weak windowController] in
+                windowController?.navigateToURL(FileManager.default.homeDirectoryForCurrentUser)
+            },
+            PaletteAction(name: "Go to Desktop", shortcut: nil, icon: nil) { [weak windowController] in
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                windowController?.navigateToURL(home.appendingPathComponent("Desktop"))
+            },
+            PaletteAction(name: "Go to Documents", shortcut: nil, icon: nil) { [weak windowController] in
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                windowController?.navigateToURL(home.appendingPathComponent("Documents"))
+            },
+            PaletteAction(name: "Go to Downloads", shortcut: nil, icon: nil) { [weak windowController] in
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                windowController?.navigateToURL(home.appendingPathComponent("Downloads"))
+            },
+            PaletteAction(name: "Search...", shortcut: "⌘F", icon: nil) { [weak windowController] in
+                windowController?.focusSearchField()
+            },
+        ]
+    }
 }
 
 // MARK: - NSMenuItemValidation
 
 extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        let wc = NSApp.keyWindow?.windowController as? MainWindowController
+
+        // Actions that require a MainWindowController
+        let windowRequiredActions: [Selector] = [
+            #selector(handleNewTab(_:)),
+            #selector(handleCloseTab(_:)),
+            #selector(handleToggleDualPane(_:)),
+            #selector(handleTogglePreview(_:)),
+            #selector(handleToggleSidebar(_:)),
+            #selector(handleToggleHiddenFiles(_:)),
+            #selector(handleGoToPath(_:)),
+            #selector(handleGoHome(_:)),
+            #selector(handleGoDesktop(_:)),
+            #selector(handleGoDocuments(_:)),
+            #selector(handleGoDownloads(_:)),
+            #selector(handleSearch(_:)),
+            #selector(handleCommandPalette(_:)),
+            #selector(handleSystemIcons(_:)),
+            #selector(handleFlatIcons(_:)),
+        ]
+
+        if let action = menuItem.action, windowRequiredActions.contains(action), wc == nil {
+            return false
+        }
+
+        // Close Tab requires more than 1 tab
+        if menuItem.action == #selector(handleCloseTab(_:)) {
+            guard let wc else { return false }
+            return wc.activePaneTabCount > 1
+        }
+
+        // Toggle state checkmarks
+        if menuItem.action == #selector(handleToggleSidebar(_:)) {
+            menuItem.state = (wc?.showSidebar ?? false) ? .on : .off
+        }
+        if menuItem.action == #selector(handleToggleDualPane(_:)) {
+            menuItem.state = (wc?.isDualPane ?? false) ? .on : .off
+        }
+        if menuItem.action == #selector(handleTogglePreview(_:)) {
+            menuItem.state = (wc?.showPreview ?? false) ? .on : .off
+        }
         if menuItem.action == #selector(handleToggleHiddenFiles(_:)) {
-            let show = (NSApp.keyWindow?.windowController as? MainWindowController)?.showHiddenFiles ?? true
-            menuItem.state = show ? .on : .off
-            return true
+            menuItem.state = (wc?.showHiddenFiles ?? true) ? .on : .off
         }
         if menuItem.action == #selector(handleSystemIcons(_:)) {
-            let currentStyle = (NSApp.keyWindow?.windowController as? MainWindowController)?.iconStyle ?? .system
-            menuItem.state = currentStyle == .system ? .on : .off
-            return true
+            menuItem.state = (wc?.iconStyle ?? .system) == .system ? .on : .off
         }
         if menuItem.action == #selector(handleFlatIcons(_:)) {
-            let currentStyle = (NSApp.keyWindow?.windowController as? MainWindowController)?.iconStyle ?? .system
-            menuItem.state = currentStyle == .flat ? .on : .off
-            return true
+            menuItem.state = (wc?.iconStyle ?? .system) == .flat ? .on : .off
         }
+
         return true
     }
 }

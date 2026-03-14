@@ -48,7 +48,7 @@ actor SearchService: SearchServiceProtocol {
 
     init(
         debounceInterval: Duration = .milliseconds(200),
-        fileSystemService: FileSystemService = FileSystemService()
+        fileSystemService: FileSystemService = .shared
     ) {
         self.debounceInterval = debounceInterval
         self.fileSystemService = fileSystemService

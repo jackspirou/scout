@@ -16,4 +16,13 @@ protocol PersistenceServiceProtocol {
     func loadIconStyle() -> IconStyle
     func saveShowHiddenFiles(_ show: Bool)
     func loadShowHiddenFiles() -> Bool
+
+    // MARK: - Sidebar Favorites
+
+    func saveSidebarFavorites(_ urls: [URL])
+    func loadSidebarFavorites() -> [URL]
+
+    // MARK: - Recent Servers
+    func saveRecentServers(_ servers: [String])
+    func loadRecentServers() -> [String]
 }

@@ -35,7 +35,7 @@ final class FileListViewController: NSViewController {
 
     private let scrollView = NSScrollView()
     private let tableView = FileListTableView()
-    private let fileSystemService = FileSystemService()
+    private let fileSystemService = FileSystemService.shared
     private let clipboardManager: ClipboardManager
 
     private var iconStyle: IconStyle
@@ -49,8 +49,18 @@ final class FileListViewController: NSViewController {
 
     private var loadingTask: Task<Void, Never>?
 
+    /// Timer for spring-loaded folder behavior during drag-and-drop.
+    private var springLoadTimer: Timer?
+    /// The table row currently being hovered for spring-loaded folder activation.
+    private var springLoadRow: Int = -1
+
     /// The URL of the directory currently displayed.
     private(set) var currentDirectoryURL: URL?
+
+    /// Routes Cmd+Z through the centralized FileUndoManager.
+    override var undoManager: UndoManager? {
+        FileUndoManager.shared.undoManager
+    }
 
     // MARK: - Init
 
@@ -64,6 +74,10 @@ final class FileListViewController: NSViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    deinit {
+        springLoadTimer?.invalidate()
     }
 
     /// The number of items currently displayed.
@@ -283,9 +297,11 @@ final class FileListViewController: NSViewController {
     @objc func moveToTrash(_ sender: Any?) {
         let items = selectedItems()
         guard !items.isEmpty else { return }
+        let originalURLs = items.map(\.url)
         Task {
             do {
-                _ = try await fileSystemService.trashItems(urls: items.map(\.url))
+                let trashedURLs = try await fileSystemService.trashItems(urls: originalURLs)
+                FileUndoManager.shared.recordTrash(originalURLs: originalURLs, trashedURLs: trashedURLs)
                 if let dir = currentDirectoryURL {
                     loadDirectory(at: dir)
                 }
@@ -303,9 +319,10 @@ final class FileListViewController: NSViewController {
         let urls = items.map(\.url)
         let dir = currentDirectoryURL
         Task {
-            let firstError: (any Error)? = await Task.detached {
+            let result: (error: (any Error)?, duplicatedURLs: [URL]) = await Task.detached {
                 let fm = FileManager.default
                 var error: (any Error)?
+                var duplicatedURLs: [URL] = []
                 for url in urls {
                     let parentDir = url.deletingLastPathComponent()
                     let baseName = url.deletingPathExtension().lastPathComponent
@@ -314,13 +331,17 @@ final class FileListViewController: NSViewController {
                     let destURL = parentDir.appendingPathComponent(copyName)
                     do {
                         try fm.copyItem(at: url, to: destURL)
+                        duplicatedURLs.append(destURL)
                     } catch let e {
                         if error == nil { error = e }
                     }
                 }
-                return error
+                return (error, duplicatedURLs)
             }.value
-            if let firstError {
+            for dupURL in result.duplicatedURLs {
+                FileUndoManager.shared.recordDuplicate(duplicateURL: dupURL)
+            }
+            if let firstError = result.error {
                 showError(firstError)
             }
             if let dir {
@@ -342,10 +363,46 @@ final class FileListViewController: NSViewController {
         guard let dir = currentDirectoryURL else { return }
         Task {
             do {
-                _ = try await fileSystemService.createDirectory(at: dir, named: "untitled folder")
+                let folderURL = try await fileSystemService.createDirectory(at: dir, named: "untitled folder")
+                FileUndoManager.shared.recordNewFolder(url: folderURL)
                 loadDirectory(at: dir)
             } catch {
                 showError(error)
+            }
+        }
+    }
+
+    /// Cmd+L — creates an alias for each selected item in the current directory.
+    @objc func makeAlias(_ sender: Any?) {
+        let items = selectedItems()
+        guard !items.isEmpty, let dir = currentDirectoryURL else { return }
+
+        Task.detached { [fileSystemService] in
+            var created: [URL] = []
+            var error: (any Error)?
+            for item in items {
+                do {
+                    let aliasURL = try fileSystemService.createAlias(
+                        for: item.url,
+                        at: dir
+                    )
+                    created.append(aliasURL)
+                } catch let e {
+                    if error == nil { error = e }
+                }
+            }
+            let capturedURLs = created
+            let capturedError = error
+            await MainActor.run { [weak self] in
+                for aliasURL in capturedURLs {
+                    FileUndoManager.shared.recordAlias(url: aliasURL)
+                }
+                if let capturedError {
+                    self?.showError(capturedError)
+                }
+                if let dir = self?.currentDirectoryURL {
+                    self?.loadDirectory(at: dir)
+                }
             }
         }
     }
@@ -646,6 +703,15 @@ final class FileListViewController: NSViewController {
         newFolder(sender)
     }
 
+    // MARK: - Spring-Loaded Folder Helpers
+
+    /// Cancels any active spring-load timer.
+    private func cancelSpringLoadTimer() {
+        springLoadTimer?.invalidate()
+        springLoadTimer = nil
+        springLoadRow = -1
+    }
+
     // MARK: - Helpers
 
     private func showError(_ error: Error) {
@@ -709,8 +775,23 @@ extension FileListViewController: NSTableViewDataSource {
     ) -> NSDragOperation {
         // Allow drop on directories or between rows
         if dropOperation == .on, sortedItems.indices.contains(row), sortedItems[row].isDirectory {
+            // Spring-loaded folder: start a timer when hovering over a directory row
+            if row != springLoadRow {
+                springLoadTimer?.invalidate()
+                springLoadRow = row
+                let item = sortedItems[row]
+                springLoadTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: false) { [weak self] _ in
+                    guard let self else { return }
+                    self.springLoadTimer = nil
+                    self.springLoadRow = -1
+                    self.delegate?.fileListView(self, didOpenItem: item)
+                }
+            }
             return .move
         }
+
+        // Cancel spring-load timer when not hovering on a directory
+        cancelSpringLoadTimer()
         return dropOperation == .above ? .move : []
     }
 
@@ -720,6 +801,7 @@ extension FileListViewController: NSTableViewDataSource {
         row: Int,
         dropOperation: NSTableView.DropOperation
     ) -> Bool {
+        cancelSpringLoadTimer()
         guard let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL],
               !urls.isEmpty
         else { return false }

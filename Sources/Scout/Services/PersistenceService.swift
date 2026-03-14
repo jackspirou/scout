@@ -45,6 +45,8 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
         static let recentLocations = "recentLocations"
         static let iconStyle = "scout.iconStyle"
         static let showHiddenFiles = "scout.showHiddenFiles"
+        static let sidebarFavorites = "scout.sidebarFavorites"
+        static let recentServers = "scout.recentServers"
     }
 
     private enum FileName {
@@ -242,6 +244,45 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
     func loadShowHiddenFiles() -> Bool {
         guard defaults.object(forKey: StoreKey.showHiddenFiles) != nil else { return true }
         return defaults.bool(forKey: StoreKey.showHiddenFiles)
+    }
+
+    // MARK: - Sidebar Favorites
+
+    func saveSidebarFavorites(_ urls: [URL]) {
+        let bookmarks: [Data] = urls.compactMap { url in
+            try? url.bookmarkData(
+                options: [],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        }
+        defaults.set(bookmarks, forKey: StoreKey.sidebarFavorites)
+    }
+
+    func loadSidebarFavorites() -> [URL] {
+        guard let bookmarks = defaults.array(forKey: StoreKey.sidebarFavorites) as? [Data] else {
+            return []
+        }
+
+        return bookmarks.compactMap { data in
+            var isStale = false
+            return try? URL(
+                resolvingBookmarkData: data,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+        }
+    }
+
+    // MARK: - Recent Servers
+
+    func saveRecentServers(_ servers: [String]) {
+        defaults.set(servers, forKey: StoreKey.recentServers)
+    }
+
+    func loadRecentServers() -> [String] {
+        defaults.stringArray(forKey: StoreKey.recentServers) ?? []
     }
 
     // MARK: - Private Helpers

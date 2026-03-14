@@ -4,6 +4,7 @@ import Cocoa
 
 protocol BrowserContainerDelegate: AnyObject {
     func browserContainer(_ container: BrowserContainerViewController, didSelectItems items: [FileItem])
+    func browserContainer(_ container: BrowserContainerViewController, didSwitchToViewMode mode: ViewMode)
 }
 
 // MARK: - BrowserContainerViewController
@@ -114,7 +115,14 @@ final class BrowserContainerViewController: NSViewController {
     // MARK: - Public API
 
     /// Toggles between single-pane and dual-pane mode with animation.
-    func toggleDualPane() {
+    /// Returns `false` if dual pane cannot be enabled (insufficient width).
+    @discardableResult
+    func toggleDualPane() -> Bool {
+        let requiredWidth = Layout.minimumPaneWidth * 2
+        if !isDualPane, splitView.bounds.width < requiredWidth {
+            return false
+        }
+
         isDualPane.toggle()
 
         NSAnimationContext.runAnimationGroup { context in
@@ -133,6 +141,7 @@ final class BrowserContainerViewController: NSViewController {
 
             splitView.adjustSubviews()
         }
+        return true
     }
 
     /// Returns the currently active (focused) pane controller.
@@ -171,9 +180,10 @@ final class BrowserContainerViewController: NSViewController {
         let targetPane = activePaneController()
         view.window?.makeFirstResponder(targetPane.view)
 
-        // Notify delegate with new active pane's selection for preview update
+        // Notify delegate with new active pane's selection and view mode
         let selectedItems = targetPane.selectedItems()
         delegate?.browserContainer(self, didSelectItems: selectedItems)
+        delegate?.browserContainer(self, didSwitchToViewMode: targetPane.currentViewMode)
     }
 
     private func updateActiveIndicator() {

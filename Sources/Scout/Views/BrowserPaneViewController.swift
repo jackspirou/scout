@@ -22,11 +22,28 @@ final class BrowserPaneViewController: NSViewController {
 
     private var iconStyle: IconStyle
     private var showHiddenFiles: Bool
+    private(set) var currentViewMode: ViewMode = .list
+    private var suppressSelectionClear: Bool = false
     private let tabBar = NSStackView()
     private let pathBarView = PathBarView()
     private let fileListViewController: FileListViewController
     private let statusBar = NSTextField(labelWithString: "0 items")
     private let directoryMonitor = DirectoryMonitor()
+
+    /// Container view that holds whichever view mode is active (list, icon grid, or column).
+    private let contentContainerView = NSView()
+
+    private lazy var iconGridViewController: IconGridViewController = {
+        let vc = IconGridViewController()
+        vc.delegate = self
+        return vc
+    }()
+
+    private lazy var columnBrowserViewController: ColumnBrowserViewController = {
+        let vc = ColumnBrowserViewController()
+        vc.delegate = self
+        return vc
+    }()
 
     // MARK: - Init
 
@@ -95,9 +112,18 @@ final class BrowserPaneViewController: NSViewController {
         directoryMonitor.delegate = self
     }
 
-    /// Returns the currently selected items in the file list.
+    /// Returns the currently selected items from whichever view mode is active.
     func selectedItems() -> [FileItem] {
-        fileListViewController.selectedItems()
+        switch currentViewMode {
+        case .list:
+            return fileListViewController.selectedItems()
+        case .icon:
+            return iconGridViewController.selectedItems()
+        case .column:
+            return columnBrowserViewController.selectedItems()
+        case .gallery:
+            return fileListViewController.selectedItems()
+        }
     }
 
     // MARK: - Configuration
@@ -117,9 +143,14 @@ final class BrowserPaneViewController: NSViewController {
     }
 
     private func configureFileList() {
+        // Set up the content container that will hold the active view mode
+        contentContainerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(contentContainerView)
+
+        // Start with the file list view controller as the default
         addChild(fileListViewController)
         fileListViewController.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(fileListViewController.view)
+        embedViewInContainer(fileListViewController.view)
     }
 
     private func configureStatusBar() {
@@ -155,11 +186,11 @@ final class BrowserPaneViewController: NSViewController {
             pathBarView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             pathBarView.heightAnchor.constraint(equalToConstant: Layout.pathBarHeight),
 
-            // File list fills the middle
-            fileListViewController.view.topAnchor.constraint(equalTo: pathBarView.bottomAnchor),
-            fileListViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            fileListViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            fileListViewController.view.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            // Content container fills the middle (hosts list, icon grid, or column view)
+            contentContainerView.topAnchor.constraint(equalTo: pathBarView.bottomAnchor),
+            contentContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            contentContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            contentContainerView.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
 
             // Status bar at the bottom
             statusBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
@@ -266,16 +297,107 @@ final class BrowserPaneViewController: NSViewController {
     }
 
     /// Updates the icon style and reloads the file list and path bar.
+    /// Only updates view controllers that have already been instantiated to avoid
+    /// eagerly forcing lazy view controllers into existence.
     func setIconStyle(_ style: IconStyle) {
         iconStyle = style
         pathBarView.setIconStyle(style)
         fileListViewController.setIconStyle(style)
+        if currentViewMode == .icon {
+            iconGridViewController.setIconStyle(style)
+        }
+        if currentViewMode == .column {
+            columnBrowserViewController.setIconStyle(style)
+        }
     }
 
     /// Updates the show hidden files setting and reloads the file list.
     func setShowHiddenFiles(_ show: Bool) {
         showHiddenFiles = show
         fileListViewController.setShowHiddenFiles(show)
+        if currentViewMode == .icon {
+            iconGridViewController.setShowHiddenFiles(show)
+        }
+        if currentViewMode == .column {
+            columnBrowserViewController.setShowHiddenFiles(show)
+        }
+    }
+
+    /// Switches to the specified view mode, loading the current directory into the new view.
+    func setViewMode(_ mode: ViewMode) {
+        guard mode != currentViewMode else { return }
+
+        // Remove the current view from the container
+        removeActiveViewFromContainer()
+
+        currentViewMode = mode
+        suppressSelectionClear = true
+
+        let url = currentURL()
+
+        switch mode {
+        case .list:
+            if fileListViewController.parent == nil {
+                addChild(fileListViewController)
+                fileListViewController.delegate = self
+            }
+            fileListViewController.view.translatesAutoresizingMaskIntoConstraints = false
+            embedViewInContainer(fileListViewController.view)
+            fileListViewController.loadDirectory(at: url)
+
+        case .icon:
+            if iconGridViewController.parent == nil {
+                addChild(iconGridViewController)
+                iconGridViewController.delegate = self
+            }
+            iconGridViewController.view.translatesAutoresizingMaskIntoConstraints = false
+            embedViewInContainer(iconGridViewController.view)
+            iconGridViewController.loadDirectory(at: url)
+
+        case .column:
+            if columnBrowserViewController.parent == nil {
+                addChild(columnBrowserViewController)
+                columnBrowserViewController.delegate = self
+            }
+            columnBrowserViewController.view.translatesAutoresizingMaskIntoConstraints = false
+            embedViewInContainer(columnBrowserViewController.view)
+            columnBrowserViewController.loadDirectory(at: url)
+
+        case .gallery:
+            // Gallery falls back to list view for now
+            if fileListViewController.parent == nil {
+                addChild(fileListViewController)
+                fileListViewController.delegate = self
+            }
+            fileListViewController.view.translatesAutoresizingMaskIntoConstraints = false
+            embedViewInContainer(fileListViewController.view)
+            fileListViewController.loadDirectory(at: url)
+        }
+    }
+
+    // MARK: - View Container Helpers
+
+    /// Embeds a view inside the content container, pinning all edges.
+    private func embedViewInContainer(_ childView: NSView) {
+        contentContainerView.addSubview(childView)
+        NSLayoutConstraint.activate([
+            childView.topAnchor.constraint(equalTo: contentContainerView.topAnchor),
+            childView.bottomAnchor.constraint(equalTo: contentContainerView.bottomAnchor),
+            childView.leadingAnchor.constraint(equalTo: contentContainerView.leadingAnchor),
+            childView.trailingAnchor.constraint(equalTo: contentContainerView.trailingAnchor),
+        ])
+    }
+
+    /// Removes the currently active view from the container.
+    private func removeActiveViewFromContainer() {
+        switch currentViewMode {
+        case .list, .gallery:
+            fileListViewController.view.removeFromSuperview()
+        case .icon:
+            iconGridViewController.view.removeFromSuperview()
+        case .column:
+            columnBrowserViewController.view.removeFromSuperview()
+        }
     }
 
     // MARK: - Keyboard Navigation
@@ -285,14 +407,30 @@ final class BrowserPaneViewController: NSViewController {
 
         switch event.keyCode {
         case 36: // Return/Enter - open selected item
-            fileListViewController.openSelectedItem()
+            let items = selectedItems()
+            for item in items {
+                if item.isDirectory {
+                    navigateTo(url: item.url)
+                } else {
+                    NSWorkspace.shared.open(item.url)
+                }
+            }
         case 120 where flags.isEmpty: // F2 - rename
-            fileListViewController.renameSelection(nil)
+            if currentViewMode == .list || currentViewMode == .gallery {
+                fileListViewController.renameSelection(nil)
+            }
         case 49 where flags.isEmpty: // Space - play/pause or Quick Look
             if let handler = onSpacebarPressed, handler() {
                 break
             }
-            fileListViewController.toggleQuickLook()
+            switch currentViewMode {
+            case .list, .gallery:
+                fileListViewController.toggleQuickLook()
+            case .icon:
+                iconGridViewController.toggleQuickLook()
+            case .column:
+                columnBrowserViewController.toggleQuickLook()
+            }
         case 126 where flags.contains(.command): // Cmd+Up - parent directory
             goToParent()
         case 51: // Backspace/Delete - go back
@@ -382,9 +520,24 @@ final class BrowserPaneViewController: NSViewController {
         guard tabs.indices.contains(activeTabIndex) else { return }
         let url = tabs[activeTabIndex].url
         pathBarView.update(with: url)
-        fileListViewController.loadDirectory(at: url)
+
+        // Reload whichever view is currently active
+        switch currentViewMode {
+        case .list, .gallery:
+            fileListViewController.loadDirectory(at: url)
+        case .icon:
+            iconGridViewController.loadDirectory(at: url)
+        case .column:
+            columnBrowserViewController.loadDirectory(at: url)
+        }
+
         // Selection is cleared on directory reload — notify delegate
-        delegate?.browserPane(self, didSelectItems: [])
+        // (but not during a view mode switch, to avoid clearing the preview)
+        if suppressSelectionClear {
+            suppressSelectionClear = false
+        } else {
+            delegate?.browserPane(self, didSelectItems: [])
+        }
         // Directory monitoring starts in fileListViewDidFinishLoading once items are loaded.
     }
 
@@ -444,7 +597,80 @@ extension BrowserPaneViewController: FileListViewDelegate {
 
 extension BrowserPaneViewController: DirectoryMonitorDelegate {
     func directoryMonitor(_ monitor: DirectoryMonitor, didObserveChanges events: [DirectoryChangeEvent]) {
-        fileListViewController.applyChanges(events)
-        updateStatusBar(itemCount: fileListViewController.itemCount, selectedCount: 0)
+        // Only apply incremental changes to the list view; other views do a full reload.
+        if currentViewMode == .list || currentViewMode == .gallery {
+            fileListViewController.applyChanges(events)
+            updateStatusBar(itemCount: fileListViewController.itemCount, selectedCount: 0)
+        } else {
+            reloadCurrentTab()
+        }
+    }
+}
+
+// MARK: - IconGridViewDelegate
+
+extension BrowserPaneViewController: IconGridViewDelegate {
+    func iconGridView(_ controller: IconGridViewController, didSelectItems items: [FileItem]) {
+        updateStatusBar(itemCount: controller.itemCount, selectedCount: items.count)
+        delegate?.browserPane(self, didSelectItems: items)
+    }
+
+    func iconGridView(_ controller: IconGridViewController, didOpenItem item: FileItem) {
+        if item.isDirectory {
+            navigateTo(url: item.url)
+        } else {
+            NSWorkspace.shared.open(item.url)
+        }
+    }
+
+    func iconGridView(_ controller: IconGridViewController, didRequestContextMenu items: [FileItem]) {
+        // Context menu is built and displayed by IconGridViewController itself
+    }
+
+    func iconGridViewDidFinishLoading(_ controller: IconGridViewController, itemCount: Int) {
+        updateStatusBar(itemCount: itemCount, selectedCount: 0)
+
+        if let url = controller.currentDirectoryURL {
+            let knownPaths = Set(controller.currentItems.map { $0.url.path })
+            directoryMonitor.startMonitoring(url: url, knownPaths: knownPaths)
+        }
+    }
+}
+
+// MARK: - ColumnBrowserViewDelegate
+
+extension BrowserPaneViewController: ColumnBrowserViewDelegate {
+    func columnBrowserView(
+        _ controller: ColumnBrowserViewController, didSelectItems items: [FileItem]
+    ) {
+        updateStatusBar(itemCount: controller.itemCount, selectedCount: items.count)
+        delegate?.browserPane(self, didSelectItems: items)
+    }
+
+    func columnBrowserView(
+        _ controller: ColumnBrowserViewController, didOpenItem item: FileItem
+    ) {
+        if item.isDirectory {
+            navigateTo(url: item.url)
+        } else {
+            NSWorkspace.shared.open(item.url)
+        }
+    }
+
+    func columnBrowserView(
+        _ controller: ColumnBrowserViewController, didRequestContextMenu items: [FileItem]
+    ) {
+        // Context menu is built and displayed by ColumnBrowserViewController itself
+    }
+
+    func columnBrowserViewDidFinishLoading(
+        _ controller: ColumnBrowserViewController, itemCount: Int
+    ) {
+        updateStatusBar(itemCount: itemCount, selectedCount: 0)
+
+        if let url = controller.currentDirectoryURL {
+            let knownPaths = Set(controller.currentItems.map { $0.url.path })
+            directoryMonitor.startMonitoring(url: url, knownPaths: knownPaths)
+        }
     }
 }
