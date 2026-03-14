@@ -39,8 +39,15 @@ final class MainWindowController: NSWindowController {
     private(set) var showHiddenFiles: Bool = true
 
     private(set) var isDualPane: Bool = false {
-        didSet { dualPaneDidChange() }
+        didSet {
+            guard !suppressDualPaneDidChange else { return }
+            dualPaneDidChange()
+        }
     }
+
+    /// When true, setting `isDualPane` skips `dualPaneDidChange` to avoid
+    /// double-toggling the container during session restore.
+    private var suppressDualPaneDidChange: Bool = false
 
     private(set) var showPreview: Bool = false {
         didSet { previewDidChange() }
@@ -62,6 +69,12 @@ final class MainWindowController: NSWindowController {
     private var sidebarWidthConstraint: NSLayoutConstraint!
     private var searchField: NSSearchField?
     private var viewModeSegmentedControl: NSSegmentedControl?
+    private var searchDebounceTimer: Timer?
+
+    /// The clipboard manager used by the browser container.
+    var clipboardManager: ClipboardManager {
+        browserContainer.clipboardManager
+    }
 
     private enum SidebarLayout {
         static let defaultWidth: CGFloat = 180
@@ -77,6 +90,7 @@ final class MainWindowController: NSWindowController {
         browserContainer.setIconStyle(iconStyle)
         browserContainer.setShowHiddenFiles(showHiddenFiles)
         previewViewController.onNavigate = { [weak self] (url: URL) in
+            self?.searchField?.stringValue = ""
             self?.browserContainer.activePaneController().navigateTo(url: url)
         }
         browserContainer.onSpacebarPressed = { [weak self] in
@@ -151,7 +165,13 @@ final class MainWindowController: NSWindowController {
 
         // Wire sidebar navigation callback
         sidebarViewController.onNavigate = { [weak self] url in
+            self?.searchField?.stringValue = ""
             self?.browserContainer.activePaneController().navigateTo(url: url)
+        }
+
+        // Wire sidebar tag search callback
+        sidebarViewController.onSearchTag = { [weak self] tagName in
+            self?.searchForTag(tagName)
         }
 
         // --- Split view (browser + preview, unchanged 2-pane layout) ---
@@ -242,12 +262,18 @@ final class MainWindowController: NSWindowController {
 
     /// Navigates the active browser pane to the given URL.
     func navigateToURL(_ url: URL) {
+        searchField?.stringValue = ""
         browserContainer.activePaneController().navigateTo(url: url)
     }
 
     /// Returns the current URL of the active browser pane.
     func currentURL() -> URL {
         browserContainer.activePaneController().currentURL()
+    }
+
+    /// Returns the currently selected file items in the active browser pane.
+    func selectedItems() -> [FileItem] {
+        browserContainer.activePaneController().selectedItems()
     }
 
     /// Focuses the toolbar search field.
@@ -259,6 +285,91 @@ final class MainWindowController: NSWindowController {
     /// Toggles sidebar visibility.
     func toggleSidebar() {
         showSidebar.toggle()
+    }
+
+    // MARK: - Session State
+
+    /// Captures the current window state for session persistence.
+    func captureWindowState() -> WindowState {
+        let frame = window?.frame ?? .zero
+        let windowFrame = WindowFrame(
+            x: Double(frame.origin.x),
+            y: Double(frame.origin.y),
+            width: Double(frame.size.width),
+            height: Double(frame.size.height)
+        )
+
+        let containerState = browserContainer.captureContainerState()
+
+        let leftTab = TabState(
+            paneState: PaneState(
+                path: containerState.leftURL,
+                viewSettings: .default,
+                scrollPosition: 0,
+                selectedItems: []
+            ),
+            title: containerState.leftURL.lastPathComponent,
+            isPinned: false
+        )
+
+        let rightTab = TabState(
+            paneState: PaneState(
+                path: containerState.rightURL,
+                viewSettings: .default,
+                scrollPosition: 0,
+                selectedItems: []
+            ),
+            title: containerState.rightURL.lastPathComponent,
+            isPinned: false
+        )
+
+        return WindowState(
+            leftTabs: [leftTab],
+            rightTabs: [rightTab],
+            activeLeftTab: 0,
+            activeRightTab: 0,
+            isDualPane: containerState.isDualPane,
+            showPreview: showPreview,
+            windowFrame: windowFrame,
+            sidebarWidth: Double(sidebarWidthConstraint?.constant ?? CGFloat(SidebarLayout.defaultWidth))
+        )
+    }
+
+    /// Restores window state from a previous session.
+    func restoreWindowState(_ state: WindowState) {
+        // Restore window frame
+        if let frame = state.windowFrame {
+            let rect = NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+            window?.setFrame(rect, display: true)
+        }
+
+        // Restore sidebar width
+        sidebarWidthConstraint?.constant = CGFloat(state.sidebarWidth)
+
+        // Restore preview state
+        if state.showPreview != showPreview {
+            togglePreview()
+        }
+
+        // Navigate to saved pane paths and restore dual pane state via the container.
+        // No fileExists check — navigateTo handles missing directories gracefully
+        // by showing an empty listing, avoiding a TOCTOU race.
+        let leftURL = state.leftTabs.first?.paneState.path
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        let rightURL = state.rightTabs.first?.paneState.path
+            ?? FileManager.default.homeDirectoryForCurrentUser
+
+        browserContainer.restoreContainerState(
+            leftURL: leftURL,
+            rightURL: rightURL,
+            isDualPane: state.isDualPane
+        )
+
+        // Sync local isDualPane from the container's authoritative state
+        // without triggering dualPaneDidChange (which would double-toggle).
+        suppressDualPaneDidChange = true
+        isDualPane = browserContainer.isDualPaneActive
+        suppressDualPaneDidChange = false
     }
 
     // MARK: - State Change Handlers
@@ -306,6 +417,66 @@ final class MainWindowController: NSWindowController {
         } else {
             previewViewController.clearPreview()
         }
+    }
+
+    // MARK: - Tag Search
+
+    /// Observation token for the tag search metadata query notification.
+    private static var tagSearchObserver: NSObjectProtocol?
+
+    /// Strong reference to the in-flight metadata query so it is not deallocated before results arrive.
+    private var tagSearchQuery: NSMetadataQuery?
+
+    /// Searches for files with the given Finder tag and displays results in the active browser pane.
+    private func searchForTag(_ tagName: String) {
+        // Stop any existing query before starting a new one.
+        tagSearchQuery?.stop()
+        tagSearchQuery = nil
+
+        let query = NSMetadataQuery()
+        query.predicate = NSPredicate(format: "kMDItemUserTags CONTAINS[c] %@", tagName)
+        query.searchScopes = [NSMetadataQueryLocalComputerScope]
+
+        // Remove any previous observer to avoid duplicates.
+        if let previousObserver = Self.tagSearchObserver {
+            NotificationCenter.default.removeObserver(previousObserver)
+            Self.tagSearchObserver = nil
+        }
+
+        Self.tagSearchObserver = NotificationCenter.default.addObserver(
+            forName: .NSMetadataQueryDidFinishGathering,
+            object: query,
+            queue: .main
+        ) { [weak self, weak query] _ in
+            guard let self, let query else { return }
+            query.stop()
+            self.tagSearchQuery = nil
+
+            // Remove the observer now that the query has finished.
+            if let observer = Self.tagSearchObserver {
+                NotificationCenter.default.removeObserver(observer)
+                Self.tagSearchObserver = nil
+            }
+
+            var items: [FileItem] = []
+            for i in 0..<query.resultCount {
+                if let result = query.result(at: i) as? NSMetadataItem,
+                   let path = result.value(forAttribute: NSMetadataItemPathKey) as? String {
+                    let url = URL(fileURLWithPath: path)
+                    if let fileItem = FileItem.create(from: url, iconStyle: self.iconStyle) {
+                        items.append(fileItem)
+                    }
+                }
+            }
+
+            self.browserContainer.activePaneController().displaySearchResults(
+                items,
+                title: "Tag: \(tagName)"
+            )
+        }
+
+        self.tagSearchQuery = query
+        query.start()
     }
 }
 
@@ -476,7 +647,7 @@ extension MainWindowController: NSSplitViewDelegate {
         constrainMinCoordinate proposedMinimumPosition: CGFloat,
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
-        max(splitView.bounds.width * 0.6, splitView.bounds.width - 250)
+        300 // minimum browser pane width
     }
 
     func splitView(
@@ -502,9 +673,10 @@ extension MainWindowController: NSSearchFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSSearchField else { return }
         let query = field.stringValue
-        _ = query
-        // Forward search query to the active browser pane for filtering.
-        // Filtering API will be wired once the browser pane exposes a filter method.
+        searchDebounceTimer?.invalidate()
+        searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+            self?.browserContainer.setFilterQuery(query)
+        }
     }
 }
 

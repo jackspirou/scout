@@ -133,6 +133,19 @@ import Foundation
         clearPasteboard()
     }
 
+    /// Clears the clipboard history.
+    func clearHistory() {
+        _history.removeAll()
+    }
+
+    // MARK: - Restore
+
+    /// Restores a previous clipboard entry from history, making it the current content.
+    func restoreFromHistory(_ content: ClipboardContent) {
+        _currentContent = content
+        writeToPasteboard(urls: content.urls, operation: content.operation)
+    }
+
     // MARK: - Private Helpers
 
     private func writeToPasteboard(urls: [URL], operation: ClipboardOperation) {

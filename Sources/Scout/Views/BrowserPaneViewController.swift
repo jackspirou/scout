@@ -29,18 +29,21 @@ final class BrowserPaneViewController: NSViewController {
     private let fileListViewController: FileListViewController
     private let statusBar = NSTextField(labelWithString: "0 items")
     private let directoryMonitor = DirectoryMonitor()
+    private var recentLocationTimer: Timer?
 
     /// Container view that holds whichever view mode is active (list, icon grid, or column).
     private let contentContainerView = NSView()
 
+    private let clipboardManager: ClipboardManager
+
     private lazy var iconGridViewController: IconGridViewController = {
-        let vc = IconGridViewController()
+        let vc = IconGridViewController(clipboardManager: clipboardManager)
         vc.delegate = self
         return vc
     }()
 
     private lazy var columnBrowserViewController: ColumnBrowserViewController = {
-        let vc = ColumnBrowserViewController()
+        let vc = ColumnBrowserViewController(clipboardManager: clipboardManager)
         vc.delegate = self
         return vc
     }()
@@ -48,6 +51,7 @@ final class BrowserPaneViewController: NSViewController {
     // MARK: - Init
 
     init(clipboardManager: ClipboardManager, iconStyle: IconStyle = .system, showHiddenFiles: Bool = true) {
+        self.clipboardManager = clipboardManager
         self.iconStyle = iconStyle
         self.showHiddenFiles = showHiddenFiles
         fileListViewController = FileListViewController(clipboardManager: clipboardManager, iconStyle: iconStyle, showHiddenFiles: showHiddenFiles)
@@ -208,6 +212,32 @@ final class BrowserPaneViewController: NSViewController {
 
     // MARK: - Public API
 
+    /// Displays search results (e.g. files matching a tag) in the file list view.
+    func displaySearchResults(_ items: [FileItem], title: String) {
+        guard !tabs.isEmpty else { return }
+
+        // Switch to list view for search results
+        if currentViewMode != .list {
+            setViewMode(.list)
+        }
+
+        // Stop directory monitoring since we're not viewing a real directory
+        directoryMonitor.stopMonitoring()
+
+        // Update the tab title and path bar to reflect the search
+        var tab = tabs[activeTabIndex]
+        tab.title = title
+        tabs[activeTabIndex] = tab
+        rebuildTabBar()
+
+        // Clear the path bar since search results don't correspond to a single directory
+        pathBarView.update(with: FileManager.default.homeDirectoryForCurrentUser)
+
+        fileListViewController.displaySearchResults(items)
+        updateStatusBar(itemCount: items.count, selectedCount: 0)
+        delegate?.browserPane(self, didSelectItems: [])
+    }
+
     /// Navigate the current tab to the given URL.
     func navigateTo(url: URL) {
         guard !tabs.isEmpty else { return }
@@ -220,6 +250,17 @@ final class BrowserPaneViewController: NSViewController {
         tabs[activeTabIndex] = tab
 
         reloadCurrentTab()
+
+        // Debounce recent locations save to avoid excessive UserDefaults writes
+        let capturedURL = url
+        recentLocationTimer?.invalidate()
+        recentLocationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
+            var recents = PersistenceService.shared.loadRecentLocations()
+            recents.removeAll { $0.path == capturedURL.path }
+            recents.insert(capturedURL, at: 0)
+            if recents.count > 20 { recents = Array(recents.prefix(20)) }
+            PersistenceService.shared.saveRecentLocations(recents)
+        }
     }
 
     /// Navigate back in the current tab's history.
@@ -323,6 +364,18 @@ final class BrowserPaneViewController: NSViewController {
         }
     }
 
+    /// Forwards the filter query to whichever view controller is active.
+    func setFilterQuery(_ query: String) {
+        switch currentViewMode {
+        case .list, .gallery:
+            fileListViewController.setFilterQuery(query)
+        case .icon:
+            iconGridViewController.setFilterQuery(query)
+        case .column:
+            columnBrowserViewController.setFilterQuery(query)
+        }
+    }
+
     /// Switches to the specified view mode, loading the current directory into the new view.
     func setViewMode(_ mode: ViewMode) {
         guard mode != currentViewMode else { return }
@@ -364,7 +417,8 @@ final class BrowserPaneViewController: NSViewController {
             columnBrowserViewController.loadDirectory(at: url)
 
         case .gallery:
-            // Gallery falls back to list view for now
+            // TODO: Implement GalleryViewController with large thumbnail grid for image-heavy directories.
+            // Falls back to list view until a dedicated gallery view is built.
             if fileListViewController.parent == nil {
                 addChild(fileListViewController)
                 fileListViewController.delegate = self
@@ -373,6 +427,11 @@ final class BrowserPaneViewController: NSViewController {
             embedViewInContainer(fileListViewController.view)
             fileListViewController.loadDirectory(at: url)
         }
+
+        // Persist the view mode for this directory
+        var settings = PersistenceService.shared.loadViewSettings(for: url) ?? .default
+        settings.viewMode = mode
+        PersistenceService.shared.saveViewSettings(for: url, settings: settings)
     }
 
     // MARK: - View Container Helpers
@@ -416,8 +475,13 @@ final class BrowserPaneViewController: NSViewController {
                 }
             }
         case 120 where flags.isEmpty: // F2 - rename
-            if currentViewMode == .list || currentViewMode == .gallery {
+            switch currentViewMode {
+            case .list, .gallery:
                 fileListViewController.renameSelection(nil)
+            case .icon:
+                iconGridViewController.contextRename(nil)
+            case .column:
+                columnBrowserViewController.contextRename(nil)
             }
         case 49 where flags.isEmpty: // Space - play/pause or Quick Look
             if let handler = onSpacebarPressed, handler() {
@@ -521,6 +585,13 @@ final class BrowserPaneViewController: NSViewController {
         let url = tabs[activeTabIndex].url
         pathBarView.update(with: url)
 
+        // Restore the persisted view mode for this directory if it differs
+        if let saved = PersistenceService.shared.loadViewSettings(for: url),
+           saved.viewMode != currentViewMode {
+            setViewMode(saved.viewMode)
+            return  // setViewMode already loads the directory
+        }
+
         // Reload whichever view is currently active
         switch currentViewMode {
         case .list, .gallery:
@@ -578,10 +649,6 @@ extension BrowserPaneViewController: FileListViewDelegate {
         }
     }
 
-    func fileListView(_ controller: FileListViewController, didRequestContextMenu items: [FileItem]) {
-        // Context menu is built and displayed by FileListViewController itself
-    }
-
     func fileListViewDidFinishLoading(_ controller: FileListViewController, itemCount: Int) {
         updateStatusBar(itemCount: itemCount, selectedCount: 0)
 
@@ -623,10 +690,6 @@ extension BrowserPaneViewController: IconGridViewDelegate {
         }
     }
 
-    func iconGridView(_ controller: IconGridViewController, didRequestContextMenu items: [FileItem]) {
-        // Context menu is built and displayed by IconGridViewController itself
-    }
-
     func iconGridViewDidFinishLoading(_ controller: IconGridViewController, itemCount: Int) {
         updateStatusBar(itemCount: itemCount, selectedCount: 0)
 
@@ -655,12 +718,6 @@ extension BrowserPaneViewController: ColumnBrowserViewDelegate {
         } else {
             NSWorkspace.shared.open(item.url)
         }
-    }
-
-    func columnBrowserView(
-        _ controller: ColumnBrowserViewController, didRequestContextMenu items: [FileItem]
-    ) {
-        // Context menu is built and displayed by ColumnBrowserViewController itself
     }
 
     func columnBrowserViewDidFinishLoading(

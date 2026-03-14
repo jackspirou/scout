@@ -70,14 +70,19 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
             // Re-highlight cached content without re-reading from disk.
             if let content = self.currentContent {
                 if self.isPreviewMode {
-                    if self.currentItem?.isMarkdown == true {
+                    if self.currentItem?.isMermaid == true {
+                        self.loadMermaidPreview(content: content)
+                    } else if self.currentItem?.isMarkdown == true {
                         self.loadMarkdownPreview(content: content)
                     } else if self.currentItem?.isHTML == true {
                         self.loadHTMLPreview(content: content)
                     }
                 } else {
                     let attributedString: NSAttributedString
-                    if let language = self.currentLanguage,
+                    if self.currentItem?.isMermaid == true {
+                        let isDark = self.view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        attributedString = MermaidHighlighter.highlight(content, fontSize: Layout.fontSize, isDark: isDark)
+                    } else if let language = self.currentLanguage,
                        let highlighter = self.highlighter,
                        let highlighted = highlighter.highlight(content, as: language) {
                         attributedString = highlighted
@@ -205,10 +210,11 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
         currentItem = item
         templateLoaded = false
         pendingMarkdownContent = nil
+        pendingMermaidContent = nil
 
         headerView.update(with: item)
 
-        let hasPreview = item.isMarkdown || item.isHTML
+        let hasPreview = item.isMarkdown || item.isHTML || item.isMermaid
         headerView.setMarkdownMode(hasPreview)
 
         // For preview-capable files, hide everything and show spinner while loading.
@@ -240,6 +246,7 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
         currentItem = nil
         isPreviewMode = false
         pendingMarkdownContent = nil
+        pendingMermaidContent = nil
         textView.string = ""
         webView.stopLoading()
         templateLoaded = false
@@ -252,13 +259,15 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
     private func setMode(_ segment: Int) {
         guard let item = currentItem else { return }
 
-        if segment == 1 && (item.isMarkdown || item.isHTML) {
+        if segment == 1 && (item.isMarkdown || item.isHTML || item.isMermaid) {
             // Preview mode
             isPreviewMode = true
             scrollView.isHidden = true
             rulerView.isHidden = true
             if let content = currentContent {
-                if item.isMarkdown {
+                if item.isMermaid {
+                    loadMermaidPreview(content: content)
+                } else if item.isMarkdown {
                     loadMarkdownPreview(content: content)
                 } else if item.isHTML {
                     loadHTMLPreview(content: content)
@@ -330,6 +339,51 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
         webView.evaluateJavaScript("renderMarkdown(`\(escaped)`)")
     }
 
+    // MARK: - Mermaid Preview
+
+    private func loadMermaidPreview(content: String) {
+        // Reuse the markdown template which already bundles mermaid.js.
+        // Instead of calling renderMarkdown(), we inject the mermaid source
+        // directly into a <div class="mermaid"> and trigger mermaid.run().
+        guard let templateURL = Bundle.module.url(forResource: "markdown-template", withExtension: "html"),
+              let html = try? String(contentsOf: templateURL, encoding: .utf8) else { return }
+
+        // Load template, then inject mermaid content after it finishes loading.
+        pendingMarkdownContent = nil
+        templateLoaded = false
+        pendingMermaidContent = content
+        startNavigationTimeout()
+        webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    private var pendingMermaidContent: String?
+
+    private func injectMermaid(_ content: String) {
+        let escaped = content
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "`", with: "\\`")
+            .replacingOccurrences(of: "$", with: "\\$")
+
+        let js = """
+        (function() {
+            var el = document.getElementById('content');
+            var div = document.createElement('div');
+            div.className = 'mermaid';
+            div.textContent = `\(escaped)`;
+            el.innerHTML = '';
+            el.appendChild(div);
+            if (typeof mermaid !== 'undefined') {
+                mermaid.initialize({
+                    startOnLoad: false,
+                    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default'
+                });
+                mermaid.run({ nodes: el.querySelectorAll('.mermaid') });
+            }
+        })();
+        """
+        webView.evaluateJavaScript(js)
+    }
+
     // MARK: - HTML Preview
 
     private func loadHTMLPreview(content: String) {
@@ -386,7 +440,12 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
             currentContent = content
 
             let attributedString: NSAttributedString
-            if let language,
+            if item.isMermaid {
+                let isDark = await MainActor.run {
+                    view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                }
+                attributedString = MermaidHighlighter.highlight(content, fontSize: Layout.fontSize, isDark: isDark)
+            } else if let language,
                let highlighter = highlighter {
                 updateHighlighterTheme()
                 attributedString = highlighter.highlight(content, as: language)
@@ -408,6 +467,7 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
             .foregroundColor: NSColor.labelColor,
         ])
     }
+
 
     private nonisolated static func decodeText(from data: Data) -> String {
         if let text = String(data: data, encoding: .utf8) {
@@ -431,8 +491,16 @@ extension TextFilePreviewViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         cancelNavigationTimeout()
 
-        // Template loaded — inject pending markdown content if any.
-        if let content = pendingMarkdownContent {
+        // Template loaded — inject pending content if any.
+        if let content = pendingMermaidContent {
+            pendingMermaidContent = nil
+            injectMermaid(content)
+            // Mermaid rendering is async — give it a moment.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.hideSpinner()
+                self?.webView.isHidden = false
+            }
+        } else if let content = pendingMarkdownContent {
             pendingMarkdownContent = nil
             injectMarkdown(content)
             // Brief delay to let JS render before revealing.

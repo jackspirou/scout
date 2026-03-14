@@ -38,6 +38,18 @@ final class PreviewHeaderView: NSView {
     private var compactDetailTrailingToDisclosure: NSLayoutConstraint!
 
     private var currentItem: FileItem?
+    private let dirSizeCalculator = DirectorySizeCalculator()
+
+    /// Small spinner shown in the compact header while computing directory size.
+    private var compactSpinner: NSProgressIndicator!
+    /// Spinner shown in the expanded grid's size value cell.
+    private var gridSizeSpinner: NSProgressIndicator!
+
+    private static let sizeFormatter: ByteCountFormatter = {
+        let f = ByteCountFormatter()
+        f.countStyle = .file
+        return f
+    }()
 
     // MARK: - Constants
 
@@ -69,6 +81,11 @@ final class PreviewHeaderView: NSView {
         configureSeparator()
         configureClickableRow()
         layoutViews()
+
+        dirSizeCalculator.onSizeComputed = { [weak self] url, size in
+            guard let self, let item = self.currentItem, item.url == url else { return }
+            self.showSize(Self.sizeFormatter.string(fromByteCount: size), kind: item.kind)
+        }
     }
 
     private func configureSubviews() {
@@ -108,9 +125,17 @@ final class PreviewHeaderView: NSView {
         modeControl.selectedSegment = 1
         modeControl.isHidden = true
 
+        compactSpinner = NSProgressIndicator()
+        compactSpinner.translatesAutoresizingMaskIntoConstraints = false
+        compactSpinner.style = .spinning
+        compactSpinner.controlSize = .small
+        compactSpinner.isIndeterminate = true
+        compactSpinner.isHidden = true
+
         addSubview(iconView)
         addSubview(nameLabel)
         addSubview(modeControl)
+        addSubview(compactSpinner)
         addSubview(compactDetailLabel)
         addSubview(disclosureButton)
     }
@@ -118,6 +143,13 @@ final class PreviewHeaderView: NSView {
     private func configureDetailGrid() {
         let sizeLabel = makeGridLabel("Size")
         sizeValueLabel = makeGridValue()
+
+        gridSizeSpinner = NSProgressIndicator()
+        gridSizeSpinner.translatesAutoresizingMaskIntoConstraints = false
+        gridSizeSpinner.style = .spinning
+        gridSizeSpinner.controlSize = .small
+        gridSizeSpinner.isIndeterminate = true
+        gridSizeSpinner.isHidden = true
 
         let kindLabel = makeGridLabel("Kind")
         kindValueLabel = makeGridValue()
@@ -177,6 +209,7 @@ final class PreviewHeaderView: NSView {
         detailGrid.isHidden = true
 
         addSubview(detailGrid)
+        addSubview(gridSizeSpinner)
     }
 
     private func configureSeparator() {
@@ -229,6 +262,12 @@ final class PreviewHeaderView: NSView {
 
             compactDetailLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
 
+            compactSpinner.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 8),
+            compactSpinner.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
+
+            gridSizeSpinner.leadingAnchor.constraint(equalTo: sizeValueLabel.leadingAnchor),
+            gridSizeSpinner.centerYAnchor.constraint(equalTo: sizeValueLabel.centerYAnchor),
+
             // Mode control sits to the right, before the disclosure button
             modeControl.trailingAnchor.constraint(equalTo: disclosureButton.leadingAnchor, constant: -6),
             modeControl.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
@@ -260,9 +299,17 @@ final class PreviewHeaderView: NSView {
         currentItem = item
         iconView.image = item.icon
         nameLabel.stringValue = item.name
-        compactDetailLabel.stringValue = [item.formattedSize, item.kind].joined(separator: " \u{00B7} ")
 
-        sizeValueLabel.stringValue = item.formattedSize
+        if item.isDirectory {
+            if let cached = dirSizeCalculator.size(for: item.url) {
+                showSize(Self.sizeFormatter.string(fromByteCount: cached), kind: item.kind)
+            } else {
+                showSizeSpinners(kind: item.kind)
+            }
+        } else {
+            showSize(item.formattedSize, kind: item.kind)
+        }
+
         kindValueLabel.stringValue = item.kind
         createdValueLabel.stringValue = item.creationDate?.fullFormatted ?? "--"
         modifiedValueLabel.stringValue = item.modificationDate?.fullFormatted ?? "--"
@@ -337,6 +384,27 @@ final class PreviewHeaderView: NSView {
     }
 
     // MARK: - Private Helpers
+
+    private func showSize(_ sizeText: String, kind: String) {
+        compactSpinner.stopAnimation(nil)
+        compactSpinner.isHidden = true
+        compactDetailLabel.stringValue = [sizeText, kind].joined(separator: " \u{00B7} ")
+
+        gridSizeSpinner.stopAnimation(nil)
+        gridSizeSpinner.isHidden = true
+        sizeValueLabel.stringValue = sizeText
+        sizeValueLabel.isHidden = false
+    }
+
+    private func showSizeSpinners(kind: String) {
+        compactSpinner.isHidden = false
+        compactSpinner.startAnimation(nil)
+        compactDetailLabel.stringValue = kind
+
+        sizeValueLabel.isHidden = true
+        gridSizeSpinner.isHidden = false
+        gridSizeSpinner.startAnimation(nil)
+    }
 
     private func makeGridLabel(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)

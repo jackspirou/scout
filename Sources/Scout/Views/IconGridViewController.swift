@@ -8,7 +8,6 @@ import UniformTypeIdentifiers
 protocol IconGridViewDelegate: AnyObject {
     func iconGridView(_ controller: IconGridViewController, didSelectItems items: [FileItem])
     func iconGridView(_ controller: IconGridViewController, didOpenItem item: FileItem)
-    func iconGridView(_ controller: IconGridViewController, didRequestContextMenu items: [FileItem])
     func iconGridViewDidFinishLoading(_ controller: IconGridViewController, itemCount: Int)
 }
 
@@ -92,12 +91,14 @@ final class IconGridViewController: NSViewController {
     weak var delegate: IconGridViewDelegate?
 
     private let fileSystemService = FileSystemService.shared
-    private let clipboardManager = ClipboardManager()
+    private let clipboardManager: ClipboardManager
+    private var allItems: [FileItem] = []
     private var sortedItems: [FileItem] = []
     private(set) var currentDirectoryURL: URL?
     private var iconSize: CGFloat = 64
     private var showHiddenFiles: Bool = false
     private var loadingTask: Task<Void, Never>?
+    private var filterQuery: String = ""
 
     /// Routes Cmd+Z through the centralized FileUndoManager.
     override var undoManager: UndoManager? {
@@ -107,6 +108,18 @@ final class IconGridViewController: NSViewController {
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
     private let flowLayout = NSCollectionViewFlowLayout()
+
+    // MARK: - Init
+
+    init(clipboardManager: ClipboardManager) {
+        self.clipboardManager = clipboardManager
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
 
     /// The number of items currently displayed.
     var itemCount: Int {
@@ -190,6 +203,12 @@ final class IconGridViewController: NSViewController {
         let showHiddenFiles = self.showHiddenFiles
         loadingTask?.cancel()
         currentDirectoryURL = url
+        filterQuery = ""
+
+        // Clear immediately to avoid showing stale data from a previous directory.
+        allItems = []
+        sortedItems = []
+        collectionView.reloadData()
 
         loadingTask = Task { [weak self] in
             guard let self else { return }
@@ -201,6 +220,7 @@ final class IconGridViewController: NSViewController {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
+                self.allItems = items
                 self.sortedItems = items
                 self.collectionView.reloadData()
                 self.delegate?.iconGridViewDidFinishLoading(self, itemCount: self.sortedItems.count)
@@ -239,11 +259,31 @@ final class IconGridViewController: NSViewController {
         }
     }
 
+    /// Sets the filter query for live directory filtering and reapplies the filter.
+    func setFilterQuery(_ query: String) {
+        filterQuery = query
+        applySortAndFilter()
+    }
+
+    private func applySortAndFilter() {
+        var items: [FileItem]
+        if filterQuery.isEmpty {
+            items = allItems
+        } else {
+            items = allItems.filter { $0.name.localizedCaseInsensitiveContains(filterQuery) }
+        }
+        // Apply the same sort order used by loadDirectory (name, ascending).
+        items.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        sortedItems = items
+        collectionView.reloadData()
+        delegate?.iconGridViewDidFinishLoading(self, itemCount: sortedItems.count)
+    }
+
     // MARK: - Menu Validation
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == NSSelectorFromString("contextRename:") {
-            return false
+            return collectionView.selectionIndexPaths.count == 1
         }
         return true
     }
@@ -277,8 +317,21 @@ final class IconGridViewController: NSViewController {
         FinderHelper.showGetInfo(for: urls)
     }
 
-    @objc func contextRename(_ sender: NSMenuItem) {
-        // Renaming is not supported in icon grid view (no inline editing).
+    @objc func contextRename(_ sender: Any?) {
+        guard let item = selectedItems().first else { return }
+        guard let newName = RenameHelper.showRenameDialog(for: item.name) else { return }
+
+        Task {
+            do {
+                let newURL = try await fileSystemService.renameItem(at: item.url, to: newName)
+                FileUndoManager.shared.recordRename(oldURL: item.url, newURL: newURL)
+                if let dir = currentDirectoryURL {
+                    loadDirectory(at: dir)
+                }
+            } catch {
+                showError(error)
+            }
+        }
     }
 
     @objc func contextCopy(_ sender: NSMenuItem) {
@@ -527,12 +580,6 @@ extension IconGridViewController: NSCollectionViewDelegate {
         delegate?.iconGridView(self, didSelectItems: selectedItems())
     }
 
-    // MARK: - Double Click
-
-    override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-    }
-
     // MARK: - Drop Destination
 
     func collectionView(
@@ -625,7 +672,6 @@ extension IconGridViewController: NSMenuDelegate {
         if items.isEmpty {
             contextMenu = FileListContextMenuBuilder.buildBackgroundMenu(target: self)
         } else {
-            delegate?.iconGridView(self, didRequestContextMenu: items)
             contextMenu = FileListContextMenuBuilder.buildContextMenu(
                 items: items,
                 target: self,

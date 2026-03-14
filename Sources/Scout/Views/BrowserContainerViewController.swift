@@ -13,7 +13,7 @@ final class BrowserContainerViewController: NSViewController {
     // MARK: - Properties
 
     private let splitView = NSSplitView()
-    private let clipboardManager: ClipboardManager
+    private(set) var clipboardManager: ClipboardManager
     private var iconStyle: IconStyle
     private var showHiddenFiles: Bool
     private let leftPane: BrowserPaneViewController
@@ -163,10 +163,56 @@ final class BrowserContainerViewController: NSViewController {
         rightPane.setShowHiddenFiles(show)
     }
 
+    /// Forwards the filter query to the active pane.
+    func setFilterQuery(_ query: String) {
+        activePaneController().setFilterQuery(query)
+    }
+
     /// The inactive pane controller (nil if single-pane mode).
     func inactivePaneController() -> BrowserPaneViewController? {
         guard isDualPane else { return nil }
         return leftPaneIsActive ? rightPane : leftPane
+    }
+
+    /// Whether dual-pane mode is currently active.
+    var isDualPaneActive: Bool {
+        isDualPane
+    }
+
+    /// Returns the current URL of the left pane.
+    func leftPaneURL() -> URL {
+        leftPane.currentURL()
+    }
+
+    /// Returns the current URL of the right pane.
+    func rightPaneURL() -> URL {
+        rightPane.currentURL()
+    }
+
+    /// Navigates the left pane to the given URL.
+    func navigateLeftPane(to url: URL) {
+        leftPane.navigateTo(url: url)
+    }
+
+    /// Navigates the right pane to the given URL.
+    func navigateRightPane(to url: URL) {
+        rightPane.navigateTo(url: url)
+    }
+
+    /// Captures the container's state for session persistence.
+    func captureContainerState() -> (leftURL: URL, rightURL: URL, isDualPane: Bool) {
+        (leftPaneURL(), rightPaneURL(), isDualPaneActive)
+    }
+
+    /// Restores the container from a persisted session state.
+    func restoreContainerState(leftURL: URL, rightURL: URL, isDualPane: Bool) {
+        navigateLeftPane(to: leftURL)
+        if isDualPane, !isDualPaneActive {
+            toggleDualPane()
+        }
+        if isDualPaneActive {
+            navigateRightPane(to: rightURL)
+        }
     }
 
     // MARK: - Focus Management

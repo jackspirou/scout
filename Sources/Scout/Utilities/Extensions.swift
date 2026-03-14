@@ -2,6 +2,28 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
+// MARK: - RenameHelper
+
+enum RenameHelper {
+    /// Shows a rename dialog and returns the new name, or nil if cancelled.
+    static func showRenameDialog(for itemName: String, in window: NSWindow? = nil) -> String? {
+        let alert = NSAlert()
+        alert.messageText = "Rename"
+        alert.informativeText = "Enter a new name for \"\(itemName)\":"
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.stringValue = itemName
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = input
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let newName = input.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !newName.isEmpty, newName != itemName else { return nil }
+        return newName
+    }
+}
+
 // MARK: - URL Extensions
 
 extension URL {

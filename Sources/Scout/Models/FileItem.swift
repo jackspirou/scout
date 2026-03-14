@@ -84,9 +84,19 @@ struct FileItem: Identifiable, Hashable {
         Self.htmlExtensions.contains(url.pathExtension.lowercased())
     }
 
+    /// Whether this file is a rich document (.docx, .doc, .rtf, .rtfd, .odt).
+    var isRichDocument: Bool {
+        Self.richDocumentExtensions.contains(url.pathExtension.lowercased())
+    }
+
     /// Whether this file is an SVG image.
     var isSVG: Bool {
         url.pathExtension.lowercased() == "svg"
+    }
+
+    /// Whether this file is a Mermaid diagram.
+    var isMermaid: Bool {
+        Self.mermaidExtensions.contains(url.pathExtension.lowercased())
     }
 
     /// The file extension (without leading dot), or an empty string if none.
@@ -304,5 +314,13 @@ struct FileItem: Identifiable, Hashable {
 
     private static let htmlExtensions: Set<String> = [
         "html", "htm",
+    ]
+
+    private static let richDocumentExtensions: Set<String> = [
+        "docx", "doc", "rtf", "rtfd", "odt",
+    ]
+
+    private static let mermaidExtensions: Set<String> = [
+        "mermaid", "mmd",
     ]
 }

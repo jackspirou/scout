@@ -72,6 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var connectToServerController: ConnectToServerWindowController?
     private var goToPathController: GoToPathWindowController?
     private var commandPaletteController: CommandPaletteWindowController?
+    private var batchRenameController: BatchRenameWindowController?
+    private var recentFoldersMenu: NSMenu?
+    private var clipboardHistoryMenu: NSMenu?
 
     // MARK: - NSApplicationDelegate
 
@@ -81,10 +84,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = makeWindowController()
         controller.showWindow(nil)
+
+        // Restore last session state after the window is visible and laid out
+        DispatchQueue.main.async {
+            Task { @MainActor in
+                if let lastSession = await PersistenceService.shared.loadLastSession() {
+                    controller.restoreWindowState(lastSession)
+                }
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         removeGlobalHotkey()
+        saveSessionState()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -101,6 +114,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         return false
+    }
+
+    // MARK: - Session Persistence
+
+    /// Saves the current window state synchronously via UserDefaults
+    /// so it persists even during app termination.
+    private func saveSessionState() {
+        guard let wc = windowControllers.first else { return }
+        let state = wc.captureWindowState()
+        if let data = try? JSONEncoder().encode(state) {
+            UserDefaults.standard.set(data, forKey: "lastSession")
+        }
     }
 
     // MARK: - Global Hotkey (Opt+Space)
@@ -195,6 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ),
             .separator,
             .item("Rename", action: #selector(FileListViewController.renameSelection(_:))),
+            .item("Batch Rename...", action: #selector(handleBatchRename(_:)), key: "R", modifiers: [.command, .shift]),
             .separator,
             .item("New Window", action: #selector(handleNewWindow(_:)), key: "n"),
             .separator,
@@ -205,7 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Edit Menu
 
     private func buildEditMenu() -> NSMenuItem {
-        buildMenu(title: "Edit", items: [
+        let menuItem = buildMenu(title: "Edit", items: [
             .item("Undo", action: Selector(("undo:")), key: "z"),
             .item("Redo", action: Selector(("redo:")), key: "Z"),
             .separator,
@@ -234,6 +260,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .separator,
             .item("Search...", action: #selector(handleSearch(_:)), key: "f"),
         ])
+
+        // Add a dynamic "Clipboard History" submenu
+        let historyMenu = NSMenu(title: "Clipboard History")
+        historyMenu.delegate = self
+        clipboardHistoryMenu = historyMenu
+
+        let historyItem = NSMenuItem(title: "Clipboard History", action: nil, keyEquivalent: "")
+        historyItem.submenu = historyMenu
+
+        let editMenu = menuItem.submenu!
+        editMenu.addItem(.separator())
+        editMenu.addItem(historyItem)
+
+        return menuItem
     }
 
     // MARK: - View Menu
@@ -285,7 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Go Menu
 
     private func buildGoMenu() -> NSMenuItem {
-        buildMenu(title: "Go", items: [
+        let menuItem = buildMenu(title: "Go", items: [
             .item("Go to Path...", action: #selector(handleGoToPath(_:)), key: "l"),
             .separator,
             .item("Home", action: #selector(handleGoHome(_:)), key: "H"),
@@ -295,6 +335,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .separator,
             .item("Connect to Server...", action: #selector(handleConnectToServer(_:)), key: "k"),
         ])
+
+        // Add a dynamic "Recent Folders" submenu
+        let recentMenu = NSMenu(title: "Recent Folders")
+        recentMenu.delegate = self
+        recentFoldersMenu = recentMenu
+
+        let recentItem = NSMenuItem(title: "Recent Folders", action: nil, keyEquivalent: "")
+        recentItem.submenu = recentMenu
+
+        let goMenu = menuItem.submenu!
+        goMenu.addItem(.separator())
+        goMenu.addItem(recentItem)
+
+        return menuItem
     }
 
     // MARK: - Window Menu
@@ -397,6 +451,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowController.focusSearchField()
     }
 
+    @objc private func handleBatchRename(_ sender: Any?) {
+        guard let wc = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let items = wc.selectedItems()
+        guard items.count >= 2 else { return }
+        let controller = BatchRenameWindowController(fileURLs: items.map(\.url))
+        controller.showWindow(nil)
+        batchRenameController = controller
+    }
+
     @objc private func handleGoHome(_ sender: Any?) {
         guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
         windowController.navigateToURL(FileManager.default.homeDirectoryForCurrentUser)
@@ -465,6 +528,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func connectToServerWindowWillClose(_ notification: Notification) {
         connectToServerController = nil
     }
+
+    // MARK: - Recent Folders Actions
+
+    @objc func handleRecentLocation(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL,
+              let wc = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        wc.navigateToURL(url)
+    }
+
+    @objc func handleClearRecentLocations(_ sender: Any?) {
+        PersistenceService.shared.saveRecentLocations([])
+    }
+
+    // MARK: - Clipboard History Actions
+
+    @MainActor @objc func handleRestoreClipboard(_ sender: NSMenuItem) {
+        guard let content = sender.representedObject as? ClipboardContent,
+              let wc = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        wc.clipboardManager.restoreFromHistory(content)
+    }
+
+    @MainActor @objc func handleClearClipboardHistory(_ sender: Any?) {
+        guard let wc = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        wc.clipboardManager.clearHistory()
+    }
+
 
     // MARK: - Hidden Files Action
 
@@ -552,6 +641,7 @@ extension AppDelegate: NSMenuItemValidation {
             #selector(handleCommandPalette(_:)),
             #selector(handleSystemIcons(_:)),
             #selector(handleFlatIcons(_:)),
+            #selector(handleBatchRename(_:)),
         ]
 
         if let action = menuItem.action, windowRequiredActions.contains(action), wc == nil {
@@ -562,6 +652,12 @@ extension AppDelegate: NSMenuItemValidation {
         if menuItem.action == #selector(handleCloseTab(_:)) {
             guard let wc else { return false }
             return wc.activePaneTabCount > 1
+        }
+
+        // Batch Rename requires at least 2 selected items
+        if menuItem.action == #selector(handleBatchRename(_:)) {
+            guard let wc else { return false }
+            return wc.selectedItems().count >= 2
         }
 
         // Toggle state checkmarks
@@ -585,5 +681,92 @@ extension AppDelegate: NSMenuItemValidation {
         }
 
         return true
+    }
+}
+
+// MARK: - NSMenuDelegate
+
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === clipboardHistoryMenu {
+            updateClipboardHistoryMenu(menu)
+            return
+        }
+
+        guard menu === recentFoldersMenu else { return }
+
+        menu.removeAllItems()
+        let recents = PersistenceService.shared.loadRecentLocations()
+
+        if recents.isEmpty {
+            let emptyItem = NSMenuItem(title: "No Recent Folders", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            menu.addItem(emptyItem)
+            return
+        }
+
+        for url in recents {
+            let item = NSMenuItem(
+                title: url.lastPathComponent,
+                action: #selector(handleRecentLocation(_:)),
+                keyEquivalent: ""
+            )
+            item.representedObject = url
+            item.target = self
+            item.image = NSWorkspace.shared.icon(forFile: url.path)
+            item.image?.size = NSSize(width: 16, height: 16)
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+        let clearItem = NSMenuItem(
+            title: "Clear Recent Folders",
+            action: #selector(handleClearRecentLocations(_:)),
+            keyEquivalent: ""
+        )
+        clearItem.target = self
+        menu.addItem(clearItem)
+    }
+
+    @MainActor private func updateClipboardHistoryMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        guard let wc = NSApp.keyWindow?.windowController as? MainWindowController else {
+            let emptyItem = NSMenuItem(title: "No History", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            menu.addItem(emptyItem)
+            return
+        }
+
+        let history = wc.clipboardManager.clipboardHistory()
+
+        if history.isEmpty {
+            let emptyItem = NSMenuItem(title: "No History", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            menu.addItem(emptyItem)
+            return
+        }
+
+        for (index, content) in history.enumerated() {
+            let title = content.displayDescription
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(handleRestoreClipboard(_:)),
+                keyEquivalent: ""
+            )
+            item.tag = index
+            item.representedObject = content
+            item.target = self
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+        let clearItem = NSMenuItem(
+            title: "Clear Clipboard History",
+            action: #selector(handleClearClipboardHistory(_:)),
+            keyEquivalent: ""
+        )
+        clearItem.target = self
+        menu.addItem(clearItem)
     }
 }

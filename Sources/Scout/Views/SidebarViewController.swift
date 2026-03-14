@@ -6,6 +6,7 @@ final class SidebarViewController: NSViewController {
     // MARK: - Properties
 
     var onNavigate: ((URL) -> Void)?
+    var onSearchTag: ((String) -> Void)?
 
     private let outlineView = NSOutlineView()
     private let scrollView = NSScrollView()
@@ -224,7 +225,11 @@ final class SidebarViewController: NSViewController {
         guard row >= 0 else { return }
         let item = sender.item(atRow: row)
         if let sidebarItem = item as? SidebarItem {
-            onNavigate?(sidebarItem.url)
+            if sidebarItem.section == .tags {
+                onSearchTag?(sidebarItem.name)
+            } else {
+                onNavigate?(sidebarItem.url)
+            }
         }
     }
 

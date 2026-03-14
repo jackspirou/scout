@@ -242,6 +242,9 @@ enum FileTypeResolver {
         for ext in ["md", "markdown"] {
             map[ext] = FileTypeDescriptor(kind: "Markdown Document", symbolName: "doc.richtext", isText: true, highlightrLanguage: "markdown")
         }
+        for ext in ["mermaid", "mmd"] {
+            map[ext] = FileTypeDescriptor(kind: "Mermaid Diagram", symbolName: "diagram", isText: true, highlightrLanguage: nil)
+        }
         map["rst"] = FileTypeDescriptor(kind: "reStructuredText Document", symbolName: "doc.richtext", isText: true, highlightrLanguage: nil)
         map["rtf"] = FileTypeDescriptor(kind: "Rich Text Document", symbolName: "doc.richtext", isText: true, highlightrLanguage: nil)
         map["tex"] = FileTypeDescriptor(kind: "LaTeX Document", symbolName: "doc.richtext", isText: true, highlightrLanguage: "latex")

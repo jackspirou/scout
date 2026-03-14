@@ -12,9 +12,6 @@ protocol ColumnBrowserViewDelegate: AnyObject {
     func columnBrowserView(
         _ controller: ColumnBrowserViewController, didOpenItem item: FileItem
     )
-    func columnBrowserView(
-        _ controller: ColumnBrowserViewController, didRequestContextMenu items: [FileItem]
-    )
     func columnBrowserViewDidFinishLoading(
         _ controller: ColumnBrowserViewController, itemCount: Int
     )
@@ -38,11 +35,14 @@ final class ColumnBrowserViewController: NSViewController {
     weak var delegate: ColumnBrowserViewDelegate?
 
     private let fileSystemService = FileSystemService.shared
-    private let clipboardManager = ClipboardManager()
+    private let clipboardManager: ClipboardManager
     private var columns: [ColumnData] = []
     private(set) var currentDirectoryURL: URL?
     private var showHiddenFiles: Bool = false
     private var loadingTask: Task<Void, Never>?
+    private var filterQuery: String = ""
+    /// Unfiltered items for the last column, used to restore when the filter is cleared.
+    private var unfilteredLastColumnItems: [FileItem] = []
 
     /// Routes Cmd+Z through the centralized FileUndoManager.
     override var undoManager: UndoManager? {
@@ -51,6 +51,18 @@ final class ColumnBrowserViewController: NSViewController {
 
     private let outerScrollView = NSScrollView()
     private let stackView = NSStackView()
+
+    // MARK: - Init
+
+    init(clipboardManager: ClipboardManager) {
+        self.clipboardManager = clipboardManager
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
 
     /// The number of items in the rightmost column.
     var itemCount: Int {
@@ -117,6 +129,7 @@ final class ColumnBrowserViewController: NSViewController {
     /// Loads the root column, clearing all existing columns.
     func loadDirectory(at url: URL) {
         currentDirectoryURL = url
+        filterQuery = ""
         removeAllColumns()
 
         loadColumnAsync(for: url, atIndex: 0)
@@ -150,6 +163,24 @@ final class ColumnBrowserViewController: NSViewController {
         if let url = currentDirectoryURL {
             loadDirectory(at: url)
         }
+    }
+
+    /// Sets the filter query for live filtering of the last (deepest) column.
+    func setFilterQuery(_ query: String) {
+        filterQuery = query
+        guard !columns.isEmpty else { return }
+        let lastIndex = columns.count - 1
+        let filtered: [FileItem]
+        if filterQuery.isEmpty {
+            filtered = unfilteredLastColumnItems
+        } else {
+            filtered = unfilteredLastColumnItems.filter {
+                $0.name.localizedCaseInsensitiveContains(filterQuery)
+            }
+        }
+        columns[lastIndex].items = filtered
+        columns[lastIndex].tableView.reloadData()
+        delegate?.columnBrowserViewDidFinishLoading(self, itemCount: filtered.count)
     }
 
     // MARK: - Column Management
@@ -187,6 +218,7 @@ final class ColumnBrowserViewController: NSViewController {
             scrollView: columnScrollView
         )
         columns.append(columnData)
+        unfilteredLastColumnItems = items
 
         // Add a separator before the column (unless it's the first)
         if columnIndex > 0 {
@@ -300,7 +332,7 @@ final class ColumnBrowserViewController: NSViewController {
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == NSSelectorFromString("contextRename:") {
-            return false
+            return selectedItems().count == 1
         }
         return true
     }
@@ -345,8 +377,21 @@ final class ColumnBrowserViewController: NSViewController {
         FinderHelper.showGetInfo(for: urls)
     }
 
-    @objc func contextRename(_ sender: NSMenuItem) {
-        // Renaming is not supported in column browser view (no inline editing).
+    @objc func contextRename(_ sender: Any?) {
+        guard let item = selectedItems().first else { return }
+        guard let newName = RenameHelper.showRenameDialog(for: item.name) else { return }
+
+        Task {
+            do {
+                let newURL = try await fileSystemService.renameItem(at: item.url, to: newName)
+                FileUndoManager.shared.recordRename(oldURL: item.url, newURL: newURL)
+                if let dir = currentDirectoryURL {
+                    loadDirectory(at: dir)
+                }
+            } catch {
+                showError(error)
+            }
+        }
     }
 
     @objc func contextCopy(_ sender: NSMenuItem) {
@@ -753,7 +798,6 @@ extension ColumnBrowserViewController: NSMenuDelegate {
         if items.isEmpty {
             contextMenu = FileListContextMenuBuilder.buildBackgroundMenu(target: self)
         } else {
-            delegate?.columnBrowserView(self, didRequestContextMenu: items)
             contextMenu = FileListContextMenuBuilder.buildContextMenu(
                 items: items,
                 target: self,

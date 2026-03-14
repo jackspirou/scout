@@ -66,6 +66,9 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
     }
 
     deinit {
+        // Guard against teardown before loadView() was ever called —
+        // the IUO UI properties are nil if the VC was never displayed.
+        guard isViewLoaded else { return }
         stopPlayback()
     }
 

@@ -28,6 +28,18 @@ struct ClipboardContent: Identifiable {
     }
 }
 
+// MARK: - ClipboardContent Display
+
+extension ClipboardContent {
+    var displayDescription: String {
+        let opName = operation == .copy ? "Copy" : "Cut"
+        if urls.count == 1 {
+            return "\(urls[0].lastPathComponent) (\(opName))"
+        }
+        return "\(urls.count) items (\(opName))"
+    }
+}
+
 // MARK: - ClipboardError
 
 enum ClipboardError: LocalizedError {

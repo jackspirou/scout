@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 protocol FileListViewDelegate: AnyObject {
     func fileListView(_ controller: FileListViewController, didSelectItems items: [FileItem])
     func fileListView(_ controller: FileListViewController, didOpenItem item: FileItem)
-    func fileListView(_ controller: FileListViewController, didRequestContextMenu items: [FileItem])
     func fileListViewDidFinishLoading(_ controller: FileListViewController, itemCount: Int)
 }
 
@@ -46,13 +45,20 @@ final class FileListViewController: NSViewController {
 
     private var currentSortField: SortField = .name
     private var sortAscending: Bool = true
+    private var filterQuery: String = ""
 
     private var loadingTask: Task<Void, Never>?
+    private let dirSizeCalculator = DirectorySizeCalculator()
 
     /// Timer for spring-loaded folder behavior during drag-and-drop.
     private var springLoadTimer: Timer?
     /// The table row currently being hovered for spring-loaded folder activation.
     private var springLoadRow: Int = -1
+
+    /// Timer for Finder-style "click selected row to rename" behavior.
+    private var renameClickTimer: Timer?
+    /// The row that was selected before the most recent click.
+    private var previouslySelectedRow: Int = -1
 
     /// The URL of the directory currently displayed.
     private(set) var currentDirectoryURL: URL?
@@ -115,6 +121,20 @@ final class FileListViewController: NSViewController {
         configureScrollView()
         layoutScrollView()
         registerForDragAndDrop()
+
+        dirSizeCalculator.onSizeComputed = { [weak self] url, _ in
+            guard let self else { return }
+            // Find the row for this directory and reload just the size column
+            if let rowIndex = self.urlToIndex[url] {
+                let sizeCol = self.tableView.column(withIdentifier: .sizeColumn)
+                if sizeCol >= 0 {
+                    self.tableView.reloadData(
+                        forRowIndexes: IndexSet(integer: rowIndex),
+                        columnIndexes: IndexSet(integer: sizeCol)
+                    )
+                }
+            }
+        }
     }
 
     // MARK: - Configuration
@@ -129,6 +149,7 @@ final class FileListViewController: NSViewController {
         tableView.rowHeight = 28
         tableView.intercellSpacing = NSSize(width: 6, height: 2)
         tableView.headerView = NSTableHeaderView()
+        tableView.action = #selector(tableViewSingleClick(_:))
         tableView.doubleAction = #selector(tableViewDoubleClick(_:))
         tableView.target = self
         tableView.delegate = self
@@ -198,7 +219,13 @@ final class FileListViewController: NSViewController {
 
     /// Loads directory contents asynchronously.
     func loadDirectory(at url: URL) {
+        renameClickTimer?.invalidate()
+        renameClickTimer = nil
+        previouslySelectedRow = -1
+
         currentDirectoryURL = url
+        filterQuery = ""
+        dirSizeCalculator.invalidate()
         loadingTask?.cancel()
 
         loadingTask = Task { [weak self] in
@@ -216,6 +243,17 @@ final class FileListViewController: NSViewController {
                 self.delegate?.fileListViewDidFinishLoading(self, itemCount: self.sortedItems.count)
             }
         }
+    }
+
+    /// Displays an arbitrary list of file items (e.g. search results) without loading from a directory.
+    func displaySearchResults(_ items: [FileItem]) {
+        loadingTask?.cancel()
+        currentDirectoryURL = nil
+        allItems = items
+        sortItems()
+        tableView.reloadData()
+        tableView.scrollRowToVisible(0)
+        delegate?.fileListViewDidFinishLoading(self, itemCount: sortedItems.count)
     }
 
     /// Updates the icon style and reloads the current directory if one is loaded.
@@ -352,10 +390,23 @@ final class FileListViewController: NSViewController {
 
     /// F2 — starts renaming the selected item.
     @objc func renameSelection(_ sender: Any?) {
-        guard tableView.selectedRow >= 0 else { return }
+        let row = tableView.selectedRow
+        guard row >= 0 else { return }
         let columnIndex = tableView.column(withIdentifier: .nameColumn)
         guard columnIndex >= 0 else { return }
-        tableView.editColumn(columnIndex, row: tableView.selectedRow, with: nil, select: true)
+        guard let cellView = tableView.view(atColumn: columnIndex, row: row, makeIfNecessary: false) as? NSTableCellView,
+              let textField = cellView.textField else { return }
+        textField.isEditable = true
+        textField.isSelectable = true
+        view.window?.makeFirstResponder(textField)
+        // Select just the name without extension for convenience
+        let name = textField.stringValue
+        if let editor = textField.currentEditor() {
+            let nameWithoutExt = (name as NSString).deletingPathExtension
+            if !nameWithoutExt.isEmpty, nameWithoutExt != name {
+                editor.selectedRange = NSRange(location: 0, length: nameWithoutExt.count)
+            }
+        }
     }
 
     /// Cmd+Shift+N — creates a new folder in the current directory.
@@ -407,14 +458,30 @@ final class FileListViewController: NSViewController {
         }
     }
 
-    // MARK: - Sorting
+    // MARK: - Filtering & Sorting
 
-    private func sortItems() {
-        sortedItems = allItems.sorted { lhs, rhs in
+    /// Sets the filter query for live directory filtering and reapplies sort/filter.
+    func setFilterQuery(_ query: String) {
+        filterQuery = query
+        applySortAndFilter()
+    }
+
+    private func applySortAndFilter() {
+        let filtered: [FileItem]
+        if filterQuery.isEmpty {
+            filtered = allItems
+        } else {
+            filtered = allItems.filter { $0.name.localizedCaseInsensitiveContains(filterQuery) }
+        }
+        sortedItems = filtered.sorted { lhs, rhs in
             let result = FileItem.compare(lhs, rhs, by: currentSortField)
             return sortAscending ? result : !result
         }
         rebuildURLIndex()
+    }
+
+    private func sortItems() {
+        applySortAndFilter()
     }
 
     /// Rebuilds the URL-to-row-index lookup dictionary from the current sorted items.
@@ -581,8 +648,6 @@ final class FileListViewController: NSViewController {
         let items = rows.compactMap { sortedItems.indices.contains($0) ? sortedItems[$0] : nil }
         guard !items.isEmpty else { return nil }
 
-        delegate?.fileListView(self, didRequestContextMenu: items)
-
         return FileListContextMenuBuilder.buildContextMenu(
             items: items,
             target: self,
@@ -729,7 +794,34 @@ final class FileListViewController: NSViewController {
         }
     }
 
+    @objc private func tableViewSingleClick(_ sender: Any?) {
+        renameClickTimer?.invalidate()
+        renameClickTimer = nil
+
+        let clickedRow = tableView.clickedRow
+        guard clickedRow >= 0 else { return }
+
+        // If clicking on the same row that was already selected, start a delayed rename
+        // (mimics Finder's "click selected name to rename" behavior).
+        let clickedColumn = tableView.clickedColumn
+        let nameColumnIndex = tableView.column(withIdentifier: .nameColumn)
+        if clickedRow == previouslySelectedRow,
+           clickedColumn == nameColumnIndex,
+           tableView.selectedRowIndexes.count == 1 {
+            renameClickTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.renameClickTimer = nil
+                self.renameSelection(nil)
+            }
+        }
+
+        previouslySelectedRow = clickedRow
+    }
+
     @objc private func tableViewDoubleClick(_ sender: Any?) {
+        renameClickTimer?.invalidate()
+        renameClickTimer = nil
+
         let clickedRow = tableView.clickedRow
         guard sortedItems.indices.contains(clickedRow) else { return }
         delegate?.fileListView(self, didOpenItem: sortedItems[clickedRow])
@@ -851,6 +943,10 @@ extension FileListViewController: NSTableViewDelegate {
             cell.textField = textField
 
             if cellIdentifier == .nameColumn {
+                textField.isEditable = true
+                textField.isSelectable = false
+                textField.delegate = self
+
                 let imageView = NSImageView()
                 imageView.translatesAutoresizingMaskIntoConstraints = false
                 imageView.imageScaling = .scaleProportionallyDown
@@ -889,10 +985,42 @@ extension FileListViewController: NSTableViewDelegate {
             cell.textField?.font = monospacedFont
             cell.textField?.textColor = .secondaryLabelColor
         case .sizeColumn:
-            cell.textField?.stringValue = item.isDirectory ? "--" : Self.sizeFormatter
-                .string(fromByteCount: item.size ?? 0)
+            let spinnerId = NSUserInterfaceItemIdentifier("dirSizeSpinner")
+            let existingSpinner = cell.subviews.first { $0.identifier == spinnerId } as? NSProgressIndicator
+
+            if item.isDirectory {
+                if let cachedSize = dirSizeCalculator.size(for: item.url) {
+                    existingSpinner?.removeFromSuperview()
+                    cell.textField?.isHidden = false
+                    cell.textField?.stringValue = Self.sizeFormatter.string(fromByteCount: cachedSize)
+                    cell.textField?.textColor = .secondaryLabelColor
+                } else {
+                    cell.textField?.isHidden = true
+                    let spinner: NSProgressIndicator
+                    if let existing = existingSpinner {
+                        spinner = existing
+                    } else {
+                        spinner = NSProgressIndicator()
+                        spinner.identifier = spinnerId
+                        spinner.style = .spinning
+                        spinner.controlSize = .small
+                        spinner.isIndeterminate = true
+                        spinner.translatesAutoresizingMaskIntoConstraints = false
+                        cell.addSubview(spinner)
+                        NSLayoutConstraint.activate([
+                            spinner.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
+                            spinner.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                        ])
+                    }
+                    spinner.startAnimation(nil)
+                }
+            } else {
+                existingSpinner?.removeFromSuperview()
+                cell.textField?.isHidden = false
+                cell.textField?.stringValue = Self.sizeFormatter.string(fromByteCount: item.size ?? 0)
+                cell.textField?.textColor = .secondaryLabelColor
+            }
             cell.textField?.font = monospacedFont
-            cell.textField?.textColor = .secondaryLabelColor
         case .kindColumn:
             cell.textField?.stringValue = item.kind
             cell.textField?.font = monospacedFont
@@ -906,6 +1034,12 @@ extension FileListViewController: NSTableViewDelegate {
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
+        // Cancel pending rename if selection changed (e.g. arrow keys)
+        if tableView.selectedRow != previouslySelectedRow {
+            renameClickTimer?.invalidate()
+            renameClickTimer = nil
+        }
+
         let items = selectedItems()
         delegate?.fileListView(self, didSelectItems: items)
     }
@@ -978,5 +1112,41 @@ extension FileListViewController: QLPreviewPanelDataSource, QLPreviewPanelDelega
         let selected = selectedItems()
         guard selected.indices.contains(index) else { return nil }
         return selected[index].url as NSURL
+    }
+}
+
+// MARK: - NSTextFieldDelegate (Inline Rename)
+
+extension FileListViewController: NSTextFieldDelegate {
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard let textField = notification.object as? NSTextField else { return }
+
+        // Prevent casual clicks from re-entering edit mode
+        textField.isSelectable = false
+
+        let row = tableView.row(for: textField)
+        guard row >= 0, sortedItems.indices.contains(row) else { return }
+
+        let item = sortedItems[row]
+        let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
+
+        // Revert if empty or unchanged
+        guard !newName.isEmpty, newName != item.name else {
+            textField.stringValue = item.name
+            return
+        }
+
+        Task {
+            do {
+                let newURL = try await fileSystemService.renameItem(at: item.url, to: newName)
+                FileUndoManager.shared.recordRename(oldURL: item.url, newURL: newURL)
+                if let dir = currentDirectoryURL {
+                    loadDirectory(at: dir)
+                }
+            } catch {
+                textField.stringValue = item.name
+                showError(error)
+            }
+        }
     }
 }
