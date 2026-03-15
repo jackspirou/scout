@@ -290,17 +290,39 @@ enum FileTypeResolver {
         map["aif"] = FileTypeDescriptor(kind: "AIFF Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
         map["opus"] = FileTypeDescriptor(kind: "Opus Audio", symbolName: "waveform", isText: false, highlightrLanguage: nil)
 
-        // Archives
-        map["zip"] = FileTypeDescriptor(kind: "ZIP Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
-        map["tar"] = FileTypeDescriptor(kind: "TAR Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
-        map["gz"] = FileTypeDescriptor(kind: "GZip Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
-        map["bz2"] = FileTypeDescriptor(kind: "BZip2 Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
-        map["xz"] = FileTypeDescriptor(kind: "XZ Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
-        map["rar"] = FileTypeDescriptor(kind: "RAR Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
-        map["7z"] = FileTypeDescriptor(kind: "7-Zip Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
-
-        // Disk images
+        // Archives - ZIP family
+        for ext in ["zip", "cbz"] {
+            map[ext] = FileTypeDescriptor(kind: "ZIP Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        }
+        // Archives - TAR family
+        for ext in ["tar", "tgz", "tbz", "tbz2", "txz", "tlz"] {
+            map[ext] = FileTypeDescriptor(kind: "TAR Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        }
+        // Archives - Compressed files
+        for ext in ["gz", "bz2", "xz", "zst", "lz", "lzma", "lz4", "br"] {
+            map[ext] = FileTypeDescriptor(kind: "Compressed File", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        }
+        // Archives - Apple/macOS
         map["dmg"] = FileTypeDescriptor(kind: "Disk Image", symbolName: "externaldrive", isText: false, highlightrLanguage: nil)
+        map["pkg"] = FileTypeDescriptor(kind: "Installer Package", symbolName: "shippingbox", isText: false, highlightrLanguage: nil)
+        map["xip"] = FileTypeDescriptor(kind: "Xcode Archive", symbolName: "shippingbox", isText: false, highlightrLanguage: nil)
+        // Archives - App bundles
+        map["ipa"] = FileTypeDescriptor(kind: "iOS App", symbolName: "iphone", isText: false, highlightrLanguage: nil)
+        map["apk"] = FileTypeDescriptor(kind: "Android App", symbolName: "apps.iphone", isText: false, highlightrLanguage: nil)
+        // Archives - Java/web
+        for ext in ["jar", "war", "ear"] {
+            map[ext] = FileTypeDescriptor(kind: "Java Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        }
+        // Archives - Other
+        map["7z"] = FileTypeDescriptor(kind: "7-Zip Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        map["rar"] = FileTypeDescriptor(kind: "RAR Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        map["iso"] = FileTypeDescriptor(kind: "Disk Image", symbolName: "opticaldiscdrive", isText: false, highlightrLanguage: nil)
+        map["cab"] = FileTypeDescriptor(kind: "Cabinet Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        map["cpio"] = FileTypeDescriptor(kind: "CPIO Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        map["rpm"] = FileTypeDescriptor(kind: "RPM Package", symbolName: "shippingbox", isText: false, highlightrLanguage: nil)
+        map["deb"] = FileTypeDescriptor(kind: "Debian Package", symbolName: "shippingbox", isText: false, highlightrLanguage: nil)
+        map["ar"] = FileTypeDescriptor(kind: "AR Archive", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
+        map["cpgz"] = FileTypeDescriptor(kind: "Compressed CPIO", symbolName: "doc.zipper", isText: false, highlightrLanguage: nil)
 
         // Git
         map["gitignore"] = FileTypeDescriptor(kind: "Git Ignore", symbolName: "eye.slash", isText: true, highlightrLanguage: "bash")

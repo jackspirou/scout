@@ -17,8 +17,11 @@ enum SortField: String, Codable, CaseIterable {
     case name
     case dateModified
     case dateCreated
+    case dateLastOpened
+    case dateAdded
     case size
     case kind
+    case tags
 }
 
 // MARK: - SortOrder
@@ -70,8 +73,12 @@ struct ViewSettings: Codable, Equatable {
         columnWidths: [
             .name: 300,
             .dateModified: 160,
+            .dateCreated: 160,
+            .dateLastOpened: 160,
+            .dateAdded: 160,
             .size: 80,
             .kind: 120,
+            .tags: 120,
         ],
         visibleColumns: [.name, .dateModified, .size, .kind],
         showHiddenFiles: true,
@@ -86,8 +93,12 @@ struct ViewSettings: Codable, Equatable {
         columnWidths: [SortField: CGFloat] = [
             .name: 300,
             .dateModified: 160,
+            .dateCreated: 160,
+            .dateLastOpened: 160,
+            .dateAdded: 160,
             .size: 80,
             .kind: 120,
+            .tags: 120,
         ],
         visibleColumns: [SortField] = [.name, .dateModified, .size, .kind],
         showHiddenFiles: Bool = true,

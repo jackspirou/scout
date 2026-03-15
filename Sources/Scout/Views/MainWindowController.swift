@@ -71,6 +71,15 @@ final class MainWindowController: NSWindowController {
     private var viewModeSegmentedControl: NSSegmentedControl?
     private var searchDebounceTimer: Timer?
 
+    // Search state
+    private let searchService = SearchService()
+    private var searchTask: Task<Void, Never>?
+    private var isSearchActive = false
+    private var preSearchURL: URL?
+    private var searchScopeBar: NSView?
+    private var searchScopeSegment: NSSegmentedControl?
+    private var searchScopeBarBottomConstraint: NSLayoutConstraint?
+
     /// The clipboard manager used by the browser container.
     var clipboardManager: ClipboardManager {
         browserContainer.clipboardManager
@@ -282,6 +291,244 @@ final class MainWindowController: NSWindowController {
         window?.makeFirstResponder(searchField)
     }
 
+    // MARK: - Spotlight Search
+
+    /// Executes a Spotlight search with the current query and scope.
+    private func executeSearch(query: String) {
+        guard !query.isEmpty else {
+            exitSearch()
+            return
+        }
+
+        // Save the current directory so we can restore when search is cleared
+        if !isSearchActive {
+            preSearchURL = browserContainer.activePaneController().currentURL()
+        }
+        isSearchActive = true
+        showScopeBar(true)
+
+        // Clear the local filter so search results aren't further filtered
+        // by the text in the search field (Spotlight already handles the query).
+        browserContainer.setFilterQuery("")
+
+        searchTask?.cancel()
+
+        let scope: SearchScope
+        if searchScopeSegment?.selectedSegment == 1 {
+            scope = .fullDisk
+        } else {
+            let currentURL = preSearchURL ?? browserContainer.activePaneController().currentURL()
+            scope = .subfolder(currentURL)
+        }
+
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+
+            // Spotlight (NSMetadataQuery) does not guarantee full coverage of the filesystem.
+            // Some items — particularly directories, recently created files, and items in
+            // certain locations — may have null metadata (kMDItemFSName == null) and won't
+            // appear in Spotlight results. This is a known macOS limitation: Spotlight indexes
+            // asynchronously and may never index some directory entries.
+            //
+            // To provide complete results for folder-scoped searches, we run a filesystem
+            // search first using FileManager.enumerator (which reads the actual directory
+            // tree), then layer Spotlight results on top. Results are deduplicated by URL
+            // so items found by both sources appear only once.
+            //
+            // For "This Mac" (fullDisk) scope, we rely on Spotlight alone since a full
+            // filesystem walk would be prohibitively slow.
+            var seenURLs = Set<URL>()
+            var allItems: [FileItem] = []
+
+            let folderURL: URL?
+            switch scope {
+            case .currentFolder(let url), .subfolder(let url):
+                folderURL = url
+            case .fullDisk:
+                folderURL = nil
+            }
+
+            // Phase 1: Filesystem search — immediate, complete results for the scoped directory.
+            // This catches everything Spotlight misses (unindexed directories, new files, etc.).
+            if let folderURL {
+                let fsItems = await self.filesystemSearch(query: query, in: folderURL)
+                if !Task.isCancelled && !fsItems.isEmpty {
+                    for item in fsItems {
+                        if seenURLs.insert(item.url).inserted {
+                            allItems.append(item)
+                        }
+                    }
+                    let items = allItems
+                    await MainActor.run {
+                        self.browserContainer.activePaneController().displaySearchResults(
+                            items,
+                            title: "Search: \(query)"
+                        )
+                    }
+                }
+            }
+
+            // Phase 2: Spotlight search — may find additional items that the filesystem walk
+            // missed (e.g., items matched by content type filters) or confirm existing results.
+            // Duplicates are skipped via the seenURLs set.
+            let stream = await self.searchService.search(query: query, scope: scope)
+            for await batch in stream {
+                guard !Task.isCancelled else { return }
+                for item in batch {
+                    if seenURLs.insert(item.url).inserted {
+                        allItems.append(item)
+                    }
+                }
+                let items = allItems
+                await MainActor.run {
+                    self.browserContainer.activePaneController().displaySearchResults(
+                        items,
+                        title: "Search: \(query)"
+                    )
+                }
+            }
+        }
+    }
+
+    /// Recursively searches the filesystem for items matching the query.
+    ///
+    /// This exists because Spotlight's index (NSMetadataQuery) has incomplete coverage.
+    /// Some filesystem entries — particularly directories, recently created files, and
+    /// items in paths Spotlight deprioritizes — have null metadata (verified via `mdls`)
+    /// and are invisible to Spotlight queries. By walking the directory tree directly
+    /// with FileManager.enumerator, we guarantee that all matching items within the
+    /// scoped folder appear in search results regardless of Spotlight's index state.
+    ///
+    /// The query supports the same glob patterns as the Spotlight search:
+    /// - `*` matches zero or more characters
+    /// - `?` matches exactly one character
+    /// - Plain text (no wildcards) does a case-insensitive substring match
+    ///
+    /// Results are capped at 1000 items to avoid blocking on very large directory trees.
+    private func filesystemSearch(query: String, in directory: URL) async -> [FileItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return [] }
+
+        let hasWildcards = trimmed.contains("*") || trimmed.contains("?")
+
+        // Build a regex pattern from the query for matching.
+        let pattern: String
+        if hasWildcards {
+            // Convert glob to regex: * → .*, ? → ., escape everything else.
+            var regex = "^"
+            for char in trimmed {
+                switch char {
+                case "*": regex += ".*"
+                case "?": regex += "."
+                case ".", "(", ")", "[", "]", "{", "}", "^", "$", "|", "+", "\\": regex += "\\\(char)"
+                default: regex += String(char)
+                }
+            }
+            regex += "$"
+            pattern = regex
+        } else {
+            // Substring match.
+            let escaped = NSRegularExpression.escapedPattern(for: trimmed)
+            pattern = ".*\(escaped).*"
+        }
+
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return []
+        }
+
+        // Run on a detached task to avoid blocking the main actor.
+        // Use a synchronous closure for FileManager.enumerator iteration to avoid
+        // the Swift 6 warning about makeIterator being unavailable in async contexts.
+        return await Task.detached {
+            let results: [FileItem] = {
+                var items: [FileItem] = []
+                let fm = FileManager.default
+                guard let enumerator = fm.enumerator(
+                    at: directory,
+                    includingPropertiesForKeys: [.nameKey, .isDirectoryKey],
+                    options: [.skipsPackageDescendants]
+                ) else { return items }
+
+                for case let url as URL in enumerator {
+                    if Task.isCancelled { break }
+                    let name = url.lastPathComponent
+                    let range = NSRange(name.startIndex..., in: name)
+                    if regex.firstMatch(in: name, range: range) != nil {
+                        if let item = FileItem.create(from: url, iconStyle: .system) {
+                            items.append(item)
+                        }
+                    }
+                    // Cap results to avoid hanging on huge directory trees.
+                    if items.count >= 1000 { break }
+                }
+                return items
+            }()
+            return results
+        }.value
+    }
+
+    /// Exits search mode and restores the original directory.
+    private func exitSearch() {
+        searchTask?.cancel()
+        searchTask = nil
+        Task { await searchService.cancelActiveSearch() }
+
+        if isSearchActive, let url = preSearchURL {
+            browserContainer.activePaneController().navigateTo(url: url)
+        }
+        isSearchActive = false
+        preSearchURL = nil
+        browserContainer.setFilterQuery("")
+        showScopeBar(false)
+    }
+
+    /// Shows or hides the search scope bar.
+    private func showScopeBar(_ show: Bool) {
+        if show {
+            if searchScopeBar == nil {
+                configureScopeBar()
+            }
+            searchScopeBar?.isHidden = false
+        } else {
+            searchScopeBar?.isHidden = true
+        }
+    }
+
+    private func configureScopeBar() {
+        let containerView = contentController.view
+
+        let bar = NSView()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        bar.wantsLayer = true
+
+        let segment = NSSegmentedControl(labels: ["Current Folder", "This Mac"], trackingMode: .selectOne, target: self, action: #selector(searchScopeChanged(_:)))
+        segment.selectedSegment = 0
+        segment.translatesAutoresizingMaskIntoConstraints = false
+        segment.controlSize = .small
+        segment.segmentStyle = .capsule
+        bar.addSubview(segment)
+        searchScopeSegment = segment
+
+        containerView.addSubview(bar, positioned: .above, relativeTo: nil)
+
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: containerView.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: splitView.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: 28),
+
+            segment.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
+            segment.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+        ])
+
+        searchScopeBar = bar
+    }
+
+    @objc private func searchScopeChanged(_ sender: NSSegmentedControl) {
+        guard let query = searchField?.stringValue, !query.isEmpty else { return }
+        executeSearch(query: query)
+    }
+
     /// Toggles sidebar visibility.
     func toggleSidebar() {
         showSidebar.toggle()
@@ -434,7 +681,9 @@ final class MainWindowController: NSWindowController {
         tagSearchQuery = nil
 
         let query = NSMetadataQuery()
-        query.predicate = NSPredicate(format: "kMDItemUserTags CONTAINS[c] %@", tagName)
+        let escaped = tagName.replacingOccurrences(of: "'", with: "\\'")
+        query.predicate = NSPredicate(fromMetadataQueryString: "kMDItemUserTags == '\(escaped)'cd")
+            ?? NSPredicate(value: false)
         query.searchScopes = [NSMetadataQueryLocalComputerScope]
 
         // Remove any previous observer to avoid duplicates.
@@ -673,10 +922,43 @@ extension MainWindowController: NSSearchFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSSearchField else { return }
         let query = field.stringValue
+
         searchDebounceTimer?.invalidate()
-        searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
-            self?.browserContainer.setFilterQuery(query)
+
+        if query.isEmpty {
+            // User cleared the search field — exit search mode
+            exitSearch()
+            return
         }
+
+        // While typing, do local filtering only
+        if isSearchActive {
+            // Already in search mode — re-search with updated query
+            searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+                self?.executeSearch(query: query)
+            }
+        } else {
+            searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+                self?.browserContainer.setFilterQuery(query)
+            }
+        }
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        // Check if editing ended because the user pressed Enter
+        guard let movement = obj.userInfo?["NSTextMovement"] as? Int,
+              movement == NSReturnTextMovement,
+              let field = obj.object as? NSSearchField
+        else { return }
+
+        let query = field.stringValue
+        guard !query.isEmpty else { return }
+
+        // Cancel any pending local filter debounce — we're switching to Spotlight search.
+        searchDebounceTimer?.invalidate()
+
+        // Enter triggers Spotlight search
+        executeSearch(query: query)
     }
 }
 

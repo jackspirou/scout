@@ -82,6 +82,10 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
                     if self.currentItem?.isMermaid == true {
                         let isDark = self.view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
                         attributedString = MermaidHighlighter.highlight(content, fontSize: Layout.fontSize, isDark: isDark)
+                    } else if self.currentItem?.isCSV == true || self.currentItem?.isTSV == true {
+                        let isDark = self.view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        let delim: Character? = self.currentItem?.isTSV == true ? "\t" : nil
+                        attributedString = CSVHighlighter.highlight(content, delimiter: delim, fontSize: Layout.fontSize, isDark: isDark)
                     } else if let language = self.currentLanguage,
                        let highlighter = self.highlighter,
                        let highlighted = highlighter.highlight(content, as: language) {
@@ -445,6 +449,12 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
                     view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
                 }
                 attributedString = MermaidHighlighter.highlight(content, fontSize: Layout.fontSize, isDark: isDark)
+            } else if item.isCSV || item.isTSV {
+                let isDark = await MainActor.run {
+                    view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                }
+                let delim: Character? = item.isTSV ? "\t" : nil
+                attributedString = CSVHighlighter.highlight(content, delimiter: delim, fontSize: Layout.fontSize, isDark: isDark)
             } else if let language,
                let highlighter = highlighter {
                 updateHighlighterTheme()

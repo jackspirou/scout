@@ -25,6 +25,8 @@ struct FileItem: Identifiable, Hashable {
     let isText: Bool
     let highlightrLanguage: String?
 
+    let addedDate: Date?
+
     /// Descriptor and style used to resolve the icon image on demand.
     let iconDescriptor: FileTypeDescriptor
     let iconStyle: IconStyle
@@ -99,6 +101,21 @@ struct FileItem: Identifiable, Hashable {
         Self.mermaidExtensions.contains(url.pathExtension.lowercased())
     }
 
+    /// Whether this file is a CSV document.
+    var isCSV: Bool {
+        url.pathExtension.lowercased() == "csv"
+    }
+
+    /// Whether this file is a TSV document.
+    var isTSV: Bool {
+        url.pathExtension.lowercased() == "tsv"
+    }
+
+    /// Whether this file is an archive.
+    var isArchive: Bool {
+        Self.archiveExtensions.contains(url.pathExtension.lowercased())
+    }
+
     /// The file extension (without leading dot), or an empty string if none.
     var `extension`: String {
         url.pathExtension
@@ -150,6 +167,7 @@ struct FileItem: Identifiable, Hashable {
         size: Int64? = nil,
         modificationDate: Date? = nil,
         creationDate: Date? = nil,
+        addedDate: Date? = nil,
         kind: String,
         isText: Bool,
         highlightrLanguage: String?,
@@ -169,6 +187,7 @@ struct FileItem: Identifiable, Hashable {
         self.size = size
         self.modificationDate = modificationDate
         self.creationDate = creationDate
+        self.addedDate = addedDate
         self.kind = kind
         self.isText = isText
         self.highlightrLanguage = highlightrLanguage
@@ -211,6 +230,7 @@ struct FileItem: Identifiable, Hashable {
             .contentTypeKey,
             .tagNamesKey,
             .isUserImmutableKey,
+            .addedToDirectoryDateKey,
         ]
 
         guard let resourceValues = try? url.resourceValues(forKeys: resourceKeys) else {
@@ -250,6 +270,7 @@ struct FileItem: Identifiable, Hashable {
             size: size,
             modificationDate: resourceValues.contentModificationDate,
             creationDate: resourceValues.creationDate,
+            addedDate: resourceValues.addedToDirectoryDate,
             kind: resourceValues.localizedTypeDescription ?? resolved.kind,
             isText: resolved.isText,
             highlightrLanguage: resolved.highlightrLanguage,
@@ -279,8 +300,16 @@ struct FileItem: Identifiable, Hashable {
             return lhs.dateModified < rhs.dateModified
         case .dateCreated:
             return (lhs.creationDate ?? .distantPast) < (rhs.creationDate ?? .distantPast)
+        case .dateLastOpened:
+            return (lhs.lastOpenedDate ?? .distantPast) < (rhs.lastOpenedDate ?? .distantPast)
+        case .dateAdded:
+            return (lhs.addedDate ?? .distantPast) < (rhs.addedDate ?? .distantPast)
         case .kind:
             return lhs.kind.localizedStandardCompare(rhs.kind) == .orderedAscending
+        case .tags:
+            let lhsTag = lhs.tags.first ?? ""
+            let rhsTag = rhs.tags.first ?? ""
+            return lhsTag.localizedStandardCompare(rhsTag) == .orderedAscending
         }
     }
 
@@ -322,5 +351,23 @@ struct FileItem: Identifiable, Hashable {
 
     private static let mermaidExtensions: Set<String> = [
         "mermaid", "mmd",
+    ]
+
+    private static let archiveExtensions: Set<String> = [
+        // ZIP family
+        "zip", "cbz",
+        // TAR family
+        "tar", "tgz", "tbz", "tbz2", "txz", "tlz",
+        // Compressed archives
+        "gz", "bz2", "xz", "lz", "lzma", "zst", "lz4", "br",
+        // Apple/macOS
+        "dmg", "pkg", "xip",
+        // App bundles as archives
+        "ipa", "apk",
+        // Java/web
+        "jar", "war", "ear",
+        // Other
+        "7z", "rar", "cab", "iso", "cpio", "rpm", "deb", "ar",
+        "cpgz",
     ]
 }

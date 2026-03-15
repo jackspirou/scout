@@ -155,125 +155,122 @@ actor SearchService: SearchServiceProtocol {
         filters: [SearchFilter],
         continuation: AsyncStream<[FileItem]>.Continuation
     ) {
-        let metadataQuery = NSMetadataQuery()
-        metadataQuery.predicate = buildPredicate(query: queryString, filters: filters)
-        metadataQuery.sortDescriptors = [
-            NSSortDescriptor(key: NSMetadataItemFSNameKey, ascending: true),
-        ]
+        // Build the predicate and scope values here, then create and configure the
+        // NSMetadataQuery entirely on the main thread. NSMetadataQuery requires ALL
+        // interactions (creation, configuration, start) on the main run loop thread.
+        // nonisolated(unsafe) because NSPredicate doesn't conform to Sendable,
+        // but the predicate is fully constructed here and only read on the main thread.
+        nonisolated(unsafe) let predicate = buildPredicate(query: queryString, filters: filters)
 
+        let searchScopes: [Any]
         switch scope {
         case let .currentFolder(url):
-            metadataQuery.searchScopes = [url]
+            searchScopes = [url]
         case let .subfolder(url):
-            metadataQuery.searchScopes = [url]
+            searchScopes = [url]
         case .fullDisk:
-            metadataQuery.searchScopes = [
-                NSMetadataQueryLocalComputerScope,
-            ]
+            searchScopes = [NSMetadataQueryLocalComputerScope]
         }
-
-        // Batch results for performance.
-        metadataQuery.notificationBatchingInterval = 0.15
 
         let observer = SpotlightObserver(continuation: continuation)
         activeObserver = observer
 
-        NotificationCenter.default.addObserver(
-            observer,
-            selector: #selector(SpotlightObserver.queryDidUpdate(_:)),
-            name: .NSMetadataQueryDidUpdate,
-            object: metadataQuery
-        )
+        // Capture self for storing the query reference back in the actor.
+        let weakSelf = self
 
-        NotificationCenter.default.addObserver(
-            observer,
-            selector: #selector(SpotlightObserver.queryDidFinish(_:)),
-            name: .NSMetadataQueryDidFinishGathering,
-            object: metadataQuery
-        )
-
-        activeQuery = metadataQuery
-
-        // NSMetadataQuery must run on the main run loop.
-        // Safety: metadataQuery is created here and only used on the main thread.
-        nonisolated(unsafe) let query = metadataQuery
         DispatchQueue.main.async {
-            query.start()
+            let metadataQuery = NSMetadataQuery()
+            metadataQuery.predicate = predicate
+            metadataQuery.sortDescriptors = [
+                NSSortDescriptor(key: NSMetadataItemFSNameKey, ascending: true),
+            ]
+            metadataQuery.searchScopes = searchScopes
+            metadataQuery.notificationBatchingInterval = 0.15
+
+            NotificationCenter.default.addObserver(
+                observer,
+                selector: #selector(SpotlightObserver.queryDidUpdate(_:)),
+                name: .NSMetadataQueryDidUpdate,
+                object: metadataQuery
+            )
+
+            NotificationCenter.default.addObserver(
+                observer,
+                selector: #selector(SpotlightObserver.queryDidFinish(_:)),
+                name: .NSMetadataQueryDidFinishGathering,
+                object: metadataQuery
+            )
+
+            Task {
+                await weakSelf.storeActiveQuery(metadataQuery)
+            }
+
+            metadataQuery.start()
         }
     }
 
-    private func buildPredicate(query: String, filters: [SearchFilter]) -> NSPredicate {
-        var subpredicates: [NSPredicate] = []
+    /// Stores the active query reference (called from main thread via Task).
+    private func storeActiveQuery(_ query: NSMetadataQuery) {
+        activeQuery = query
+    }
 
-        // Main text query: match against display name.
-        let nameQuery = query.replacingOccurrences(of: "*", with: "")
-        subpredicates.append(
-            NSPredicate(
-                format: "%K LIKE[cd] %@",
-                NSMetadataItemFSNameKey,
-                "*\(nameQuery)*"
-            )
-        )
+    private func buildPredicate(query: String, filters: [SearchFilter]) -> NSPredicate {
+        // Use NSPredicate(fromMetadataQueryString:) which parses Spotlight's native
+        // query syntax directly. This bypasses the NSPredicate-to-Spotlight translation
+        // layer entirely, avoiding crashes in generateMetadataDescription.
+        var queryParts: [String] = []
+
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let hasWildcards = trimmed.contains("*") || trimmed.contains("?")
+
+        if trimmed.isEmpty {
+            queryParts.append("kMDItemFSName == '*'")
+        } else {
+            // Escape single quotes in user input.
+            let escaped = trimmed.replacingOccurrences(of: "'", with: "\\'")
+            if hasWildcards {
+                queryParts.append("kMDItemFSName == '\(escaped)'cd")
+            } else {
+                queryParts.append("kMDItemFSName == '*\(escaped)*'cd")
+            }
+        }
 
         for filter in filters {
             switch filter {
             case let .kind(kind):
-                subpredicates.append(
-                    NSPredicate(
-                        format: "%K == %@",
-                        NSMetadataItemContentTypeKey,
-                        kind
-                    )
-                )
+                let escaped = kind.replacingOccurrences(of: "'", with: "\\'")
+                queryParts.append("kMDItemContentType == '\(escaped)'")
 
             case let .sizeGreaterThan(size):
-                subpredicates.append(
-                    NSPredicate(
-                        format: "%K > %lld",
-                        NSMetadataItemFSSizeKey,
-                        size
-                    )
-                )
+                queryParts.append("kMDItemFSSize > \(size)")
 
             case let .sizeLessThan(size):
-                subpredicates.append(
-                    NSPredicate(
-                        format: "%K < %lld",
-                        NSMetadataItemFSSizeKey,
-                        size
-                    )
-                )
+                queryParts.append("kMDItemFSSize < \(size)")
 
             case let .modifiedAfter(date):
-                subpredicates.append(
-                    NSPredicate(
-                        format: "%K > %@",
-                        NSMetadataItemFSContentChangeDateKey,
-                        date as NSDate
-                    )
-                )
+                let timestamp = date.timeIntervalSince1970
+                queryParts.append("kMDItemFSContentChangeDate > $time.iso(\(timestamp))")
 
             case let .modifiedBefore(date):
-                subpredicates.append(
-                    NSPredicate(
-                        format: "%K < %@",
-                        NSMetadataItemFSContentChangeDateKey,
-                        date as NSDate
-                    )
-                )
+                let timestamp = date.timeIntervalSince1970
+                queryParts.append("kMDItemFSContentChangeDate < $time.iso(\(timestamp))")
 
             case let .hasTag(tag):
-                subpredicates.append(
-                    NSPredicate(
-                        format: "%K CONTAINS %@",
-                        "kMDItemUserTags",
-                        tag
-                    )
-                )
+                let escaped = tag.replacingOccurrences(of: "'", with: "\\'")
+                queryParts.append("kMDItemUserTags == '\(escaped)'cd")
             }
         }
 
-        return NSCompoundPredicate(andPredicateWithSubpredicates: subpredicates)
+        let queryString = queryParts.joined(separator: " && ")
+
+        if let predicate = NSPredicate(fromMetadataQueryString: queryString) {
+            return predicate
+        }
+
+        // Fallback: if the native query string parsing fails, use a simple NSPredicate.
+        // This should not happen with well-formed queries, but prevents a crash.
+        NSLog("[SearchService] Failed to parse metadata query string: %@", queryString)
+        return NSPredicate(format: "%K == %@", NSMetadataItemFSNameKey, "*")
     }
 }
 

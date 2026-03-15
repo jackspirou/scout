@@ -15,8 +15,12 @@ protocol FileListViewDelegate: AnyObject {
 extension NSUserInterfaceItemIdentifier {
     static let nameColumn = NSUserInterfaceItemIdentifier("NameColumn")
     static let dateModifiedColumn = NSUserInterfaceItemIdentifier("DateModifiedColumn")
+    static let dateCreatedColumn = NSUserInterfaceItemIdentifier("DateCreatedColumn")
+    static let dateLastOpenedColumn = NSUserInterfaceItemIdentifier("DateLastOpenedColumn")
+    static let dateAddedColumn = NSUserInterfaceItemIdentifier("DateAddedColumn")
     static let sizeColumn = NSUserInterfaceItemIdentifier("SizeColumn")
     static let kindColumn = NSUserInterfaceItemIdentifier("KindColumn")
+    static let tagsColumn = NSUserInterfaceItemIdentifier("TagsColumn")
 }
 
 // MARK: - Drag Type
@@ -111,6 +115,55 @@ final class FileListViewController: NSViewController {
         return formatter
     }()
 
+    /// Configures a tags cell with colored dots matching Finder's tag colors.
+    private static func configureTagsCell(_ cell: NSTableCellView, tags: [String]) {
+        // Remove any previously added tag dot views
+        let tagViewID = NSUserInterfaceItemIdentifier("tagDots")
+        cell.subviews.filter { $0.identifier == tagViewID }.forEach { $0.removeFromSuperview() }
+
+        cell.textField?.isHidden = true
+
+        guard !tags.isEmpty else { return }
+
+        let labels = NSWorkspace.shared.fileLabels
+        let colors = NSWorkspace.shared.fileLabelColors
+
+        let stack = NSStackView()
+        stack.identifier = tagViewID
+        stack.orientation = .horizontal
+        stack.spacing = 3
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
+            stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+
+        for tag in tags {
+            let dot = NSView()
+            dot.wantsLayer = true
+            dot.translatesAutoresizingMaskIntoConstraints = false
+
+            // Look up the tag color from system labels
+            if let index = labels.firstIndex(of: tag), index < colors.count {
+                dot.layer?.backgroundColor = colors[index].cgColor
+            } else {
+                dot.layer?.backgroundColor = NSColor.systemGray.cgColor
+            }
+            dot.layer?.cornerRadius = 5
+            dot.toolTip = tag
+
+            NSLayoutConstraint.activate([
+                dot.widthAnchor.constraint(equalToConstant: 10),
+                dot.heightAnchor.constraint(equalToConstant: 10),
+            ])
+
+            stack.addArrangedSubview(dot)
+        }
+    }
+
     // MARK: - Lifecycle
 
     override func loadView() {
@@ -158,13 +211,45 @@ final class FileListViewController: NSViewController {
         addColumn(identifier: .nameColumn, title: "Name", width: 300, minWidth: 150, sortKey: .name)
         addColumn(
             identifier: .dateModifiedColumn,
-            title: "Date Modified",
+            title: "Updated At",
             width: 160,
             minWidth: 100,
             sortKey: .dateModified
         )
+        addColumn(
+            identifier: .dateCreatedColumn,
+            title: "Created At",
+            width: 160,
+            minWidth: 100,
+            sortKey: .dateCreated
+        )
+        addColumn(
+            identifier: .dateLastOpenedColumn,
+            title: "Last Opened",
+            width: 160,
+            minWidth: 100,
+            sortKey: .dateLastOpened
+        )
+        addColumn(
+            identifier: .dateAddedColumn,
+            title: "Added At",
+            width: 160,
+            minWidth: 100,
+            sortKey: .dateAdded
+        )
         addColumn(identifier: .sizeColumn, title: "Size", width: 80, minWidth: 60, sortKey: .size)
         addColumn(identifier: .kindColumn, title: "Kind", width: 120, minWidth: 80, sortKey: .kind)
+        addColumn(identifier: .tagsColumn, title: "Tags", width: 120, minWidth: 60, sortKey: .tags)
+
+        // Hide columns not in the default visible set
+        let defaultVisible: Set<SortField> = [.name, .dateModified, .size, .kind]
+        for def in Self.allColumnDefinitions where def.sortField != .name {
+            if let col = tableView.tableColumn(withIdentifier: def.identifier) {
+                col.isHidden = !defaultVisible.contains(def.sortField)
+            }
+        }
+
+        setupHeaderContextMenu()
 
         tableView.contextMenuProvider = { [weak self] rows in
             self?.buildContextMenu(forRows: rows)
@@ -249,6 +334,7 @@ final class FileListViewController: NSViewController {
     func displaySearchResults(_ items: [FileItem]) {
         loadingTask?.cancel()
         currentDirectoryURL = nil
+        filterQuery = ""  // Search results are already filtered; don't apply local filter on top.
         allItems = items
         sortItems()
         tableView.reloadData()
@@ -464,6 +550,7 @@ final class FileListViewController: NSViewController {
     func setFilterQuery(_ query: String) {
         filterQuery = query
         applySortAndFilter()
+        tableView.reloadData()
     }
 
     private func applySortAndFilter() {
@@ -768,6 +855,90 @@ final class FileListViewController: NSViewController {
         newFolder(sender)
     }
 
+    // MARK: - Header Context Menu (Show/Hide Columns)
+
+    /// All columns available for show/hide, mapped from SortField to column identifier and display title.
+    private static let allColumnDefinitions: [(sortField: SortField, identifier: NSUserInterfaceItemIdentifier, title: String)] = [
+        (.name, .nameColumn, "Name"),
+        (.dateModified, .dateModifiedColumn, "Updated At"),
+        (.dateCreated, .dateCreatedColumn, "Created At"),
+        (.dateLastOpened, .dateLastOpenedColumn, "Last Opened"),
+        (.dateAdded, .dateAddedColumn, "Added At"),
+        (.size, .sizeColumn, "Size"),
+        (.kind, .kindColumn, "Kind"),
+        (.tags, .tagsColumn, "Tags"),
+    ]
+
+    /// Builds and assigns the header context menu for showing/hiding columns.
+    private func setupHeaderContextMenu() {
+        let menu = NSMenu(title: "Columns")
+        for definition in Self.allColumnDefinitions {
+            let menuItem = NSMenuItem(
+                title: definition.title,
+                action: #selector(toggleColumnVisibility(_:)),
+                keyEquivalent: ""
+            )
+            menuItem.target = self
+            menuItem.representedObject = definition.identifier
+            // Name column is always visible and cannot be toggled
+            if definition.sortField == .name {
+                menuItem.state = .on
+                menuItem.isEnabled = false
+            } else {
+                let column = tableView.tableColumn(withIdentifier: definition.identifier)
+                menuItem.state = (column?.isHidden == false) ? .on : .off
+            }
+            menu.addItem(menuItem)
+        }
+        tableView.headerView?.menu = menu
+    }
+
+    /// Called when the user toggles a column from the header context menu.
+    @objc private func toggleColumnVisibility(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? NSUserInterfaceItemIdentifier,
+              let column = tableView.tableColumn(withIdentifier: identifier)
+        else { return }
+
+        column.isHidden.toggle()
+        sender.state = column.isHidden ? .off : .on
+    }
+
+    /// Applies persisted column visibility from a ViewSettings instance.
+    func applyColumnVisibility(from settings: ViewSettings) {
+        for definition in Self.allColumnDefinitions {
+            // Name column is always visible
+            guard definition.sortField != .name else { continue }
+            if let column = tableView.tableColumn(withIdentifier: definition.identifier) {
+                column.isHidden = !settings.visibleColumns.contains(definition.sortField)
+            }
+        }
+        // Refresh the header menu checkmarks to match
+        refreshHeaderMenuStates()
+    }
+
+    /// Returns the current column visibility as an array of SortField values, for persisting.
+    func currentVisibleColumns() -> [SortField] {
+        Self.allColumnDefinitions.compactMap { definition in
+            let column = tableView.tableColumn(withIdentifier: definition.identifier)
+            return (column?.isHidden == false) ? definition.sortField : nil
+        }
+    }
+
+    /// Refreshes the header context menu checkmarks to match the current column visibility.
+    private func refreshHeaderMenuStates() {
+        guard let menu = tableView.headerView?.menu else { return }
+        for menuItem in menu.items {
+            guard let identifier = menuItem.representedObject as? NSUserInterfaceItemIdentifier else { continue }
+            let column = tableView.tableColumn(withIdentifier: identifier)
+            // Name is always on
+            if identifier == .nameColumn {
+                menuItem.state = .on
+            } else {
+                menuItem.state = (column?.isHidden == false) ? .on : .off
+            }
+        }
+    }
+
     // MARK: - Spring-Loaded Folder Helpers
 
     /// Cancels any active spring-load timer.
@@ -984,6 +1155,14 @@ extension FileListViewController: NSTableViewDelegate {
             cell.textField?.stringValue = Self.dateFormatter.string(from: item.dateModified)
             cell.textField?.font = monospacedFont
             cell.textField?.textColor = .secondaryLabelColor
+        case .dateCreatedColumn:
+            if let created = item.creationDate {
+                cell.textField?.stringValue = Self.dateFormatter.string(from: created)
+            } else {
+                cell.textField?.stringValue = "--"
+            }
+            cell.textField?.font = monospacedFont
+            cell.textField?.textColor = .secondaryLabelColor
         case .sizeColumn:
             let spinnerId = NSUserInterfaceItemIdentifier("dirSizeSpinner")
             let existingSpinner = cell.subviews.first { $0.identifier == spinnerId } as? NSProgressIndicator
@@ -1025,6 +1204,24 @@ extension FileListViewController: NSTableViewDelegate {
             cell.textField?.stringValue = item.kind
             cell.textField?.font = monospacedFont
             cell.textField?.textColor = .secondaryLabelColor
+        case .dateLastOpenedColumn:
+            if let date = item.lastOpenedDate {
+                cell.textField?.stringValue = Self.dateFormatter.string(from: date)
+            } else {
+                cell.textField?.stringValue = "--"
+            }
+            cell.textField?.font = monospacedFont
+            cell.textField?.textColor = .secondaryLabelColor
+        case .dateAddedColumn:
+            if let date = item.addedDate {
+                cell.textField?.stringValue = Self.dateFormatter.string(from: date)
+            } else {
+                cell.textField?.stringValue = "--"
+            }
+            cell.textField?.font = monospacedFont
+            cell.textField?.textColor = .secondaryLabelColor
+        case .tagsColumn:
+            Self.configureTagsCell(cell, tags: item.tags)
         default:
             break
         }
@@ -1063,6 +1260,21 @@ extension FileListViewController: NSTableViewDelegate {
         }
 
         return [trashAction]
+    }
+
+    // MARK: - Type-Select Support
+
+    func tableView(
+        _ tableView: NSTableView,
+        typeSelectStringFor tableColumn: NSTableColumn?,
+        row: Int
+    ) -> String? {
+        guard tableColumn?.identifier == .nameColumn,
+              sortedItems.indices.contains(row)
+        else {
+            return nil
+        }
+        return sortedItems[row].name
     }
 }
 

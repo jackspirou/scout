@@ -25,6 +25,7 @@ final class PreviewViewController: NSViewController {
     private let videoPreview = VideoPreviewViewController()
     private let audioPreview = AudioPreviewViewController()
     private let documentPreview = DocumentPreviewViewController()
+    private let archivePreview = ArchivePreviewViewController()
     private let directoryPreview = DirectoryPreviewViewController()
     private weak var activeChild: NSViewController?
 
@@ -100,6 +101,9 @@ final class PreviewViewController: NSViewController {
         } else if item.isRichDocument {
             showChild(documentPreview)
             documentPreview.displayItem(item)
+        } else if item.isArchive {
+            showChild(archivePreview)
+            archivePreview.displayItem(item)
         } else if item.isText {
             showChild(textPreview)
             textPreview.displayItem(item)
