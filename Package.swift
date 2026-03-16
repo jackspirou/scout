@@ -16,13 +16,13 @@ let package = Package(
             path: "Sources/CSearchfs",
             publicHeadersPath: "include"
         ),
-        .executableTarget(
-            name: "Scout",
+        .target(
+            name: "ScoutLib",
             dependencies: [
                 .product(name: "Highlighter", package: "HighlighterSwift"),
                 "CSearchfs",
             ],
-            path: "Sources/Scout",
+            path: "Sources/ScoutLib",
             exclude: [
                 "Resources/Info.plist",
                 "Resources/Scout.entitlements",
@@ -39,17 +39,19 @@ let package = Package(
                 .swiftLanguageMode(.v5),
             ]
         ),
-        .target(
-            name: "ScoutDropKit",
-            dependencies: [],
-            path: "Sources/ScoutDropKit",
+        .executableTarget(
+            name: "Scout",
+            dependencies: [
+                "ScoutLib",
+            ],
+            path: "Sources/Scout",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
         ),
         .testTarget(
             name: "ScoutDropTests",
-            dependencies: ["ScoutDropKit"],
+            dependencies: ["ScoutLib"],
             path: "Tests/ScoutDropTests",
             swiftSettings: [
                 .swiftLanguageMode(.v5),

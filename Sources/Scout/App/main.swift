@@ -1,4 +1,5 @@
 import AppKit
+import ScoutLib
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)

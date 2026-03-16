@@ -155,6 +155,23 @@ enum ScoutDropIdentity: Sendable {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    // MARK: - Verification Code
+
+    /// Derives a 6-digit verification code from two public key hashes.
+    /// Both peers compute the same code independently (never transmitted).
+    /// A MITM produces different key hashes on each side, yielding different codes.
+    static func deriveVerificationCode(localKeyHash: String, peerKeyHash: String) -> String {
+        // Canonical ordering ensures both sides compute the same input.
+        let (first, second) = localKeyHash < peerKeyHash
+            ? (localKeyHash, peerKeyHash)
+            : (peerKeyHash, localKeyHash)
+        let combined = Data((first + second).utf8)
+        let digest = SHA256.hash(data: combined)
+        // Take first 4 bytes as a UInt32, mod 1_000_000 for 6 digits.
+        let value = digest.prefix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        return String(format: "%06d", value % 1_000_000)
+    }
+
     // MARK: - Self-Signed Certificate
 
     private static func createSelfSignedCertificate(privateKey: SecKey) throws -> Data {

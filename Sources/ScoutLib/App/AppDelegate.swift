@@ -64,7 +64,7 @@ private func buildMenu(title: String, items: [MenuItemDescriptor]) -> NSMenuItem
     return menuItem
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Properties
 
     private var windowControllers: [MainWindowController] = []
@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - NSApplicationDelegate
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu()
         setupGlobalHotkey()
 
@@ -95,12 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    public func applicationWillTerminate(_ notification: Notification) {
         removeGlobalHotkey()
         saveSessionState()
     }
 
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
             if let existing = windowControllers.first {
                 existing.showWindow(nil)
@@ -112,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+    public func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         return false
     }
 
@@ -621,7 +621,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - NSMenuItemValidation
 
 extension AppDelegate: NSMenuItemValidation {
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+    public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let wc = NSApp.keyWindow?.windowController as? MainWindowController
 
         // Actions that require a MainWindowController
@@ -687,7 +687,7 @@ extension AppDelegate: NSMenuItemValidation {
 // MARK: - NSMenuDelegate
 
 extension AppDelegate: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
+    public func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === clipboardHistoryMenu {
             updateClipboardHistoryMenu(menu)
             return

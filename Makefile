@@ -8,9 +8,9 @@ BUNDLE_ID  := com.jackspirou.scout
 BUILD_DIR  := build
 
 # Paths – source artifacts
-INFO_PLIST   := Sources/Scout/Resources/Info.plist
-ENTITLEMENTS := Sources/Scout/Resources/Scout.entitlements
-ICONSET_DIR  := Sources/Scout/Resources/AppIcon.iconset
+INFO_PLIST   := Sources/ScoutLib/Resources/Info.plist
+ENTITLEMENTS := Sources/ScoutLib/Resources/Scout.entitlements
+ICONSET_DIR  := Sources/ScoutLib/Resources/AppIcon.iconset
 
 # Paths – build artifacts
 APP_BUNDLE     := $(BUILD_DIR)/$(APP_NAME).app
@@ -61,7 +61,7 @@ app: release
 	# Compile Asset Catalog with actool (produces Assets.car with squircle-masked icon)
 	@echo "==> Compiling Asset Catalog"
 	@/Applications/Xcode.app/Contents/Developer/usr/bin/actool \
-		Sources/Scout/Resources/Assets.xcassets \
+		Sources/ScoutLib/Resources/Assets.xcassets \
 		--compile "$(APP_RESOURCES)" \
 		--platform macosx \
 		--minimum-deployment-target 14.0 \
@@ -133,10 +133,10 @@ lint:
 	swift build
 
 # ------------------------------------------------------------------
-# test – placeholder until a test suite is added
+# test – run the test suite
 # ------------------------------------------------------------------
 test:
-	@echo "No tests yet"
+	swift test
 
 # ------------------------------------------------------------------
 # version – extract the short version string from Info.plist

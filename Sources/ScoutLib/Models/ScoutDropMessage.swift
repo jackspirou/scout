@@ -19,7 +19,6 @@ struct ScoutDropOfferMetadata: Codable {
     let transferID: UUID
     let files: [ScoutDropFileEntry]
     let totalSize: Int64
-    let verificationCode: String
     let senderDeviceID: String
 }
 

@@ -15,7 +15,16 @@ final class SidebarViewController: NSViewController {
     private let scrollView = NSScrollView()
 
     private var sectionItems: [SidebarSection: [SidebarItem]] = [:]
-    private let sections = SidebarSection.allCases
+
+    /// Sections currently visible in the sidebar. Hides Nearby when empty.
+    private var visibleSections: [SidebarSection] {
+        SidebarSection.allCases.filter { section in
+            if section == .nearby {
+                return !(sectionItems[.nearby] ?? []).isEmpty
+            }
+            return true
+        }
+    }
 
     /// Built-in favorite URLs that cannot be removed via context menu.
     private var defaultFavoriteURLs: Set<URL> {
@@ -99,7 +108,7 @@ final class SidebarViewController: NSViewController {
         outlineView.reloadData()
 
         // Expand all sections by default
-        for section in sections {
+        for section in visibleSections {
             outlineView.expandItem(section)
         }
     }
@@ -111,6 +120,8 @@ final class SidebarViewController: NSViewController {
 
         // Check for duplicate names to show disambiguating device ID suffix.
         let nameCounts = Dictionary(peers.map { ($0.name, 1) }, uniquingKeysWith: +)
+
+        let wasEmpty = (sectionItems[.nearby] ?? []).isEmpty
 
         sectionItems[.nearby] = peers.map { peer in
             var displayName = peer.name
@@ -126,8 +137,19 @@ final class SidebarViewController: NSViewController {
                 peer: peer
             )
         }
-        outlineView.reloadItem(SidebarSection.nearby, reloadChildren: true)
-        outlineView.expandItem(SidebarSection.nearby)
+
+        let isEmpty = peers.isEmpty
+
+        if wasEmpty != isEmpty {
+            // Section visibility changed — reload the entire outline.
+            outlineView.reloadData()
+            for section in visibleSections {
+                outlineView.expandItem(section)
+            }
+        } else if !isEmpty {
+            outlineView.reloadItem(SidebarSection.nearby, reloadChildren: true)
+            outlineView.expandItem(SidebarSection.nearby)
+        }
     }
 
     // MARK: - Favorites
@@ -314,7 +336,7 @@ final class SidebarViewController: NSViewController {
 extension SidebarViewController: NSOutlineViewDataSource {
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         if item == nil {
-            return sections.count
+            return visibleSections.count
         }
         if let section = item as? SidebarSection {
             return sectionItems[section]?.count ?? 0
@@ -324,7 +346,7 @@ extension SidebarViewController: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         if item == nil {
-            return sections[index]
+            return visibleSections[index]
         }
         if let section = item as? SidebarSection {
             return sectionItems[section]![index]

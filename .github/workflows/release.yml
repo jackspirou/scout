@@ -19,42 +19,17 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
-      - name: Build release
-        run: swift build -c release
+      - name: Test
+        run: swift test
 
-      - name: Create .app bundle
-        run: |
-          RELEASE_BIN="$(swift build -c release --show-bin-path)/Scout"
-          mkdir -p Scout.app/Contents/MacOS
-          mkdir -p Scout.app/Contents/Resources
-          cp "$RELEASE_BIN" Scout.app/Contents/MacOS/Scout
-          cp Sources/Scout/Resources/Info.plist Scout.app/Contents/
-          printf 'APPL????' > Scout.app/Contents/PkgInfo
-          cp Sources/Scout/Resources/Scout.entitlements Scout.app/Contents/Resources/Scout.entitlements
-          chmod +x Scout.app/Contents/MacOS/Scout
-
-      - name: Compile Asset Catalog
-        run: |
-          xcrun actool \
-            Sources/Scout/Resources/Assets.xcassets \
-            --compile Scout.app/Contents/Resources \
-            --platform macosx \
-            --minimum-deployment-target 14.0 \
-            --app-icon AppIcon \
-            --output-partial-info-plist /dev/null
-
-      - name: Code sign bundle
-        run: codesign --force --deep --sign - Scout.app
+      - name: Build .app bundle
+        run: make app
 
       - name: Create DMG
-        run: |
-          mkdir -p dmg_contents
-          cp -R Scout.app dmg_contents/
-          ln -s /Applications dmg_contents/Applications
-          hdiutil create -volname "Scout" -srcfolder dmg_contents -ov -format UDZO Scout.dmg
+        run: make dmg
 
       - name: Create zip
-        run: ditto -c -k --sequesterRsrc --keepParent Scout.app Scout.app.zip
+        run: ditto -c -k --sequesterRsrc --keepParent build/Scout.app Scout.app.zip
 
       - name: Generate changelog
         run: |
@@ -83,5 +58,5 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ steps.prerelease.outputs.flag == 'true' }}
           files: |
-            Scout.dmg
+            build/Scout.dmg
             Scout.app.zip

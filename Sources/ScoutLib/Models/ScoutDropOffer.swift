@@ -17,4 +17,16 @@ struct ScoutDropOffer: Identifiable {
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
     }
+
+    /// Verification code formatted with a space for readability (e.g. "123 456").
+    var formattedVerificationCode: String {
+        Self.formatCode(verificationCode)
+    }
+
+    /// Formats a 6-digit code as "XXX XXX" for easier visual comparison.
+    static func formatCode(_ code: String) -> String {
+        guard code.count == 6 else { return code }
+        let idx = code.index(code.startIndex, offsetBy: 3)
+        return "\(code[..<idx]) \(code[idx...])"
+    }
 }

@@ -355,11 +355,25 @@ final class PreviewHeaderView: NSView {
                 heightConstraint.constant = Layout.expandedHeight
                 detailGrid.isHidden = false
                 compactDetailLabel.isHidden = true
+                compactSpinner.isHidden = true
+                compactSpinner.stopAnimation(nil)
+                // Show grid spinner if size is still loading.
+                if sizeValueLabel.isHidden {
+                    gridSizeSpinner.isHidden = false
+                    gridSizeSpinner.startAnimation(nil)
+                }
                 disclosureButton.image = NSImage(systemSymbolName: "chevron.up", accessibilityDescription: "Collapse")
             } else {
                 heightConstraint.constant = Layout.collapsedHeight
                 detailGrid.isHidden = true
+                gridSizeSpinner.isHidden = true
+                gridSizeSpinner.stopAnimation(nil)
                 compactDetailLabel.isHidden = false
+                // Show compact spinner if size is still loading.
+                if sizeValueLabel.isHidden {
+                    compactSpinner.isHidden = false
+                    compactSpinner.startAnimation(nil)
+                }
                 disclosureButton.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: "Expand")
             }
 
@@ -402,8 +416,10 @@ final class PreviewHeaderView: NSView {
         compactDetailLabel.stringValue = kind
 
         sizeValueLabel.isHidden = true
-        gridSizeSpinner.isHidden = false
-        gridSizeSpinner.startAnimation(nil)
+        // Only show the grid spinner when expanded — it's a direct subview of
+        // the header (not the grid) so it isn't hidden by detailGrid.isHidden.
+        gridSizeSpinner.isHidden = !isExpanded
+        if isExpanded { gridSizeSpinner.startAnimation(nil) }
     }
 
     private func makeGridLabel(_ text: String) -> NSTextField {

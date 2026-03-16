@@ -236,11 +236,14 @@ actor ScoutDropService: ScoutDropServiceProtocol {
             )
         }
 
-        // Generate verification code for PIN verification.
-        let verificationCode = String(format: "%06d", Int.random(in: 0...999_999))
-
-        // Emit the code to the sender's UI.
-        outgoingVerificationContinuation.yield((peer.name, verificationCode))
+        // Derive verification code from both peers' public keys (never transmitted).
+        if let identity = localIdentity, let peerKeyHash,
+           let localHash = ScoutDropIdentity.publicKeyHash(from: identity) {
+            let code = ScoutDropIdentity.deriveVerificationCode(
+                localKeyHash: localHash, peerKeyHash: peerKeyHash
+            )
+            outgoingVerificationContinuation.yield((peer.name, code))
+        }
 
         // Send offer.
         let offerMeta = ScoutDropOfferMetadata(
@@ -248,7 +251,6 @@ actor ScoutDropService: ScoutDropServiceProtocol {
             transferID: transferID,
             files: entries,
             totalSize: totalSize,
-            verificationCode: verificationCode,
             senderDeviceID: advertisedDeviceID
         )
         try await sendControl(
@@ -434,12 +436,21 @@ actor ScoutDropService: ScoutDropServiceProtocol {
             // Retrieve the peer's public key hash extracted during TLS handshake.
             let peerKeyHash = incomingPeerKeyHashes.removeValue(forKey: ObjectIdentifier(group))
 
+            // Derive verification code from both peers' public keys (never transmitted).
+            var verificationCode = ""
+            if let identity = localIdentity, let peerKeyHash,
+               let localHash = ScoutDropIdentity.publicKeyHash(from: identity) {
+                verificationCode = ScoutDropIdentity.deriveVerificationCode(
+                    localKeyHash: localHash, peerKeyHash: peerKeyHash
+                )
+            }
+
             let offer = ScoutDropOffer(
                 id: offerMeta.transferID,
                 senderName: offerMeta.senderName,
                 files: offerMeta.files,
                 totalSize: offerMeta.totalSize,
-                verificationCode: offerMeta.verificationCode,
+                verificationCode: verificationCode,
                 senderDeviceID: offerMeta.senderDeviceID,
                 peerPublicKeyHash: peerKeyHash
             )
@@ -944,8 +955,12 @@ actor ScoutDropService: ScoutDropServiceProtocol {
             let name = Self.extractServiceName(from: result)
             let deviceID = Self.extractDeviceID(from: result)
 
+            // Wait for TXT record metadata before showing a peer — we need
+            // the deviceID for both self-filtering and TOFU verification.
+            guard let deviceID else { continue }
+
             // Skip our own advertised service — no point transferring to ourselves.
-            if let deviceID, !advertisedDeviceID.isEmpty, deviceID == advertisedDeviceID {
+            if !advertisedDeviceID.isEmpty, deviceID == advertisedDeviceID {
                 continue
             }
 

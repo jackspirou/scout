@@ -4,7 +4,7 @@ import Network
 import Security
 import XCTest
 
-@testable import ScoutDropKit
+@testable import ScoutLib
 
 // MARK: - ScoutDropFrameHeaderTests
 
@@ -450,7 +450,6 @@ final class ScoutDropMessageTests: XCTestCase {
                 ScoutDropFileEntry(relativePath: "b.txt", size: 200, isDirectory: false),
             ],
             totalSize: 300,
-            verificationCode: "123456",
             senderDeviceID: "device-abc"
         )
         let data = try JSONEncoder().encode(meta)
@@ -459,7 +458,6 @@ final class ScoutDropMessageTests: XCTestCase {
         XCTAssertEqual(decoded.transferID, id)
         XCTAssertEqual(decoded.files.count, 2)
         XCTAssertEqual(decoded.totalSize, 300)
-        XCTAssertEqual(decoded.verificationCode, "123456")
         XCTAssertEqual(decoded.senderDeviceID, "device-abc")
     }
 
@@ -469,7 +467,6 @@ final class ScoutDropMessageTests: XCTestCase {
             transferID: UUID(),
             files: [],
             totalSize: 0,
-            verificationCode: "000000",
             senderDeviceID: "dev1"
         )
         let data = try JSONEncoder().encode(meta)
@@ -484,26 +481,11 @@ final class ScoutDropMessageTests: XCTestCase {
             transferID: UUID(),
             files: [],
             totalSize: 0,
-            verificationCode: "000000",
             senderDeviceID: "dev1"
         )
         let data = try JSONEncoder().encode(meta)
         let decoded = try JSONDecoder().decode(ScoutDropOfferMetadata.self, from: data)
         XCTAssertEqual(decoded.senderName, "")
-    }
-
-    func testOfferMetadataEmptyVerificationCode() throws {
-        let meta = ScoutDropOfferMetadata(
-            senderName: "A",
-            transferID: UUID(),
-            files: [],
-            totalSize: 0,
-            verificationCode: "",
-            senderDeviceID: "d"
-        )
-        let data = try JSONEncoder().encode(meta)
-        let decoded = try JSONDecoder().decode(ScoutDropOfferMetadata.self, from: data)
-        XCTAssertEqual(decoded.verificationCode, "")
     }
 
     func testOfferMetadataUnicodeSenderName() throws {
@@ -512,7 +494,6 @@ final class ScoutDropMessageTests: XCTestCase {
             transferID: UUID(),
             files: [],
             totalSize: 0,
-            verificationCode: "123456",
             senderDeviceID: "dev1"
         )
         let data = try JSONEncoder().encode(meta)
@@ -534,7 +515,6 @@ final class ScoutDropMessageTests: XCTestCase {
             transferID: UUID(),
             files: files,
             totalSize: files.reduce(0) { $0 + $1.size },
-            verificationCode: "123456",
             senderDeviceID: "dev1"
         )
         let data = try JSONEncoder().encode(meta)
@@ -552,7 +532,6 @@ final class ScoutDropMessageTests: XCTestCase {
             "transferID": "\(id.uuidString)",
             "files": [],
             "totalSize": 0,
-            "verificationCode": "999999",
             "senderDeviceID": "dev-future",
             "compressionAlgorithm": "zstd",
             "protocolVersion": 2
@@ -2056,5 +2035,54 @@ final class ScoutDropResumeTests: XCTestCase {
         let base = URL(fileURLWithPath: "/tmp/dest/subdir/photo.jpg")
         let incomplete = base.appendingPathExtension("incomplete")
         XCTAssertEqual(incomplete.lastPathComponent, "photo.jpg.incomplete")
+    }
+}
+
+// MARK: - ScoutDropVerificationCodeTests
+
+final class ScoutDropVerificationCodeTests: XCTestCase {
+
+    func testDeterministic() {
+        let code1 = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "aaa", peerKeyHash: "bbb")
+        let code2 = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "aaa", peerKeyHash: "bbb")
+        XCTAssertEqual(code1, code2)
+    }
+
+    func testSymmetric() {
+        let code1 = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "aaa", peerKeyHash: "bbb")
+        let code2 = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "bbb", peerKeyHash: "aaa")
+        XCTAssertEqual(code1, code2, "Both peers must derive the same code regardless of order")
+    }
+
+    func testSixDigitFormat() {
+        let code = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "abc123", peerKeyHash: "def456")
+        XCTAssertEqual(code.count, 6)
+        XCTAssertTrue(code.allSatisfy(\.isNumber))
+    }
+
+    func testLeadingZerosPreserved() {
+        // Try many inputs to find one that produces leading zeros
+        var foundLeadingZero = false
+        for i in 0..<1000 {
+            let code = ScoutDropIdentity.deriveVerificationCode(
+                localKeyHash: "test\(i)", peerKeyHash: "peer\(i)"
+            )
+            XCTAssertEqual(code.count, 6, "Code must always be 6 digits")
+            if code.hasPrefix("0") { foundLeadingZero = true }
+        }
+        XCTAssertTrue(foundLeadingZero, "At least one code should have a leading zero over 1000 trials")
+    }
+
+    func testDifferentKeysProduceDifferentCodes() {
+        let code1 = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "key1", peerKeyHash: "key2")
+        let code2 = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "key1", peerKeyHash: "key3")
+        XCTAssertNotEqual(code1, code2)
+    }
+
+    func testFormatCodeGrouping() {
+        XCTAssertEqual(ScoutDropOffer.formatCode("123456"), "123 456")
+        XCTAssertEqual(ScoutDropOffer.formatCode("000000"), "000 000")
+        XCTAssertEqual(ScoutDropOffer.formatCode("12345"), "12345", "Non-6-digit codes pass through unchanged")
+        XCTAssertEqual(ScoutDropOffer.formatCode(""), "")
     }
 }

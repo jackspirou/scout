@@ -797,7 +797,8 @@ final class MainWindowController: NSWindowController {
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Sending to \(peerName)"
-                    alert.informativeText = "Verification code: \(code)\nTell the recipient this code to confirm."
+                    let formatted = ScoutDropOffer.formatCode(code)
+                    alert.informativeText = "Verification code: \(formatted)\nTell the recipient this code to confirm."
                     alert.alertStyle = .informational
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
@@ -841,7 +842,7 @@ final class MainWindowController: NSWindowController {
 
             var info = "\(offer.fileCount) item\(offer.fileCount == 1 ? "" : "s") (\(offer.formattedSize))"
             if !isTrusted, !offer.verificationCode.isEmpty {
-                info += "\n\nVerification code: \(offer.verificationCode)"
+                info += "\n\nVerification code: \(offer.formattedVerificationCode)"
                 info += "\nConfirm this code with the sender before accepting."
             }
             alert.informativeText = info

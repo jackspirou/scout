@@ -15,6 +15,7 @@ make release    # Release build
 make app        # Assemble .app bundle (includes actool + codesign)
 make run        # Build and launch debug binary
 make install    # Copy .app to /Applications
+make test       # Run tests
 make clean      # Remove all build artifacts
 make changelog  # Regenerate CHANGELOG.md via git-cliff
 ```
@@ -52,15 +53,18 @@ ci: add macOS 15 to CI matrix
 ```
 
 ## Architecture
-- `Sources/Scout/App/` — Entry point (`main.swift`), `AppDelegate`
-- `Sources/Scout/Models/` — Data models (`FileItem`, `ViewSettings`, `Workspace`, etc.)
-- `Sources/Scout/Views/` — AppKit view controllers and window controllers
-- `Sources/Scout/Controllers/` — Business logic controllers
-- `Sources/Scout/Services/` — File system, search, persistence services
-- `Sources/Scout/Utilities/` — Extensions and keyboard shortcuts
-- `Sources/Scout/Resources/` — Info.plist, entitlements, assets, icons
+- `Sources/Scout/App/main.swift` — Thin executable entry point (imports `ScoutLib`)
+- `Sources/ScoutLib/App/` — `AppDelegate`
+- `Sources/ScoutLib/Models/` — Data models (`FileItem`, `ViewSettings`, `Workspace`, etc.)
+- `Sources/ScoutLib/Views/` — AppKit view controllers and window controllers
+- `Sources/ScoutLib/Controllers/` — Business logic controllers
+- `Sources/ScoutLib/Services/` — File system, search, persistence services
+- `Sources/ScoutLib/Utilities/` — Extensions and keyboard shortcuts
+- `Sources/ScoutLib/Resources/` — Info.plist, entitlements, assets, icons
+- `Tests/ScoutDropTests/` — Tests (`@testable import ScoutLib`)
 
 ## Key Technical Notes
+- The project uses a library+executable split: `ScoutLib` (library) contains all code, `Scout` (executable) is a thin wrapper that imports `ScoutLib` and starts the app. This improves SourceKit-LSP indexing and enables `@testable import` for tests.
 - SPM executables require `app.setActivationPolicy(.regular)` to appear as GUI apps
 - App bundle is manually assembled from SPM output (see Makefile `app` target)
 - Icon PNGs have pre-rendered macOS squircle mask (superellipse n=5.0)
