@@ -145,18 +145,31 @@ final class AudioLevelTap {
             process: tapProcess
         )
 
-        var tapRef: MTAudioProcessingTap?
-        let status = MTAudioProcessingTapCreate(
-            kCFAllocatorDefault,
-            &callbacks,
-            kMTAudioProcessingTapCreationFlag_PostEffects,
-            &tapRef
-        )
-
-        guard status == noErr, let tapValue = tapRef else {
-            Unmanaged<TapContext>.fromOpaque(contextPointer).release()
-            return
-        }
+        #if compiler(>=6.2)
+            var tapRef: MTAudioProcessingTap?
+            let status = MTAudioProcessingTapCreate(
+                kCFAllocatorDefault,
+                &callbacks,
+                kMTAudioProcessingTapCreationFlag_PostEffects,
+                &tapRef
+            )
+            guard status == noErr, let tapValue = tapRef else {
+                Unmanaged<TapContext>.fromOpaque(contextPointer).release()
+                return
+            }
+        #else
+            var unmanagedTap: Unmanaged<MTAudioProcessingTap>?
+            let status = MTAudioProcessingTapCreate(
+                kCFAllocatorDefault,
+                &callbacks,
+                kMTAudioProcessingTapCreationFlag_PostEffects,
+                &unmanagedTap
+            )
+            guard status == noErr, let tapValue = unmanagedTap?.takeRetainedValue() else {
+                Unmanaged<TapContext>.fromOpaque(contextPointer).release()
+                return
+            }
+        #endif
 
         let params = AVMutableAudioMixInputParameters(track: audioTrack)
         params.audioTapProcessor = tapValue
