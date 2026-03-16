@@ -2,6 +2,8 @@
 
 import CoreGraphics
 import Foundation
+import ImageIO
+import ScreenCaptureKit
 
 // ------------------------------------------------------------------
 // screenshot.swift – Capture a screenshot of the Scout app window
@@ -117,22 +119,68 @@ guard windowID != 0 else {
 Thread.sleep(forTimeInterval: 2.0)
 
 // ------------------------------------------------------------------
-// 6. Capture the screenshot
+// 6. Capture the screenshot via ScreenCaptureKit
 // ------------------------------------------------------------------
-let capture = Process()
-capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-capture.arguments = ["-l", String(windowID), "-o", outputPath]
-do {
-    try capture.run()
-    capture.waitUntilExit()
-} catch {
-    fputs("Error: Could not run screencapture: \(error)\n", stderr)
-    terminateScout()
-    exit(1)
+// Requires screen recording permission in System Settings > Privacy
+// & Security > Screen & System Audio Recording. Grant access to
+// Terminal (or whichever app runs this script).
+let semaphore = DispatchSemaphore(value: 0)
+var captureError: String?
+
+Task {
+    do {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: true
+        )
+
+        guard let scWindow = content.windows.first(where: {
+            $0.owningApplication?.applicationName == appName
+                && $0.frame.width > 100
+        }) else {
+            captureError = "Could not find Scout window in ScreenCaptureKit"
+            semaphore.signal()
+            return
+        }
+
+        let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+        let config = SCStreamConfiguration()
+        config.width = Int(scWindow.frame.width) * 2 // Retina
+        config.height = Int(scWindow.frame.height) * 2
+        config.captureResolution = .best
+        config.showsCursor = false
+
+        let image = try await SCScreenshotManager.captureImage(
+            contentFilter: filter,
+            configuration: config
+        )
+
+        let outputURL = URL(fileURLWithPath: outputPath)
+        guard let destination = CGImageDestinationCreateWithURL(
+            outputURL as CFURL, "public.png" as CFString, 1, nil
+        ) else {
+            captureError = "Could not create image destination at \(outputPath)"
+            semaphore.signal()
+            return
+        }
+
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            captureError = "Failed to write PNG to \(outputPath)"
+            semaphore.signal()
+            return
+        }
+    } catch {
+        captureError = "ScreenCaptureKit error: \(error.localizedDescription)\n"
+            + "Grant screen recording permission to your terminal in:\n"
+            + "System Settings > Privacy & Security > Screen & System Audio Recording"
+    }
+    semaphore.signal()
 }
 
-guard capture.terminationStatus == 0 else {
-    fputs("Error: screencapture exited with status \(capture.terminationStatus)\n", stderr)
+semaphore.wait()
+
+if let error = captureError {
+    fputs("Error: \(error)\n", stderr)
     terminateScout()
     exit(1)
 }
