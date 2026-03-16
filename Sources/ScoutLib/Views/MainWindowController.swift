@@ -26,7 +26,6 @@ private extension NSToolbarItem.Identifier {
 
     static let viewMode = NSToolbarItem.Identifier("com.scout.toolbar.viewMode")
     static let searchField = NSToolbarItem.Identifier("com.scout.toolbar.search")
-    static let toggleDualPane = NSToolbarItem.Identifier("com.scout.toolbar.dualPane")
     static let togglePreview = NSToolbarItem.Identifier("com.scout.toolbar.preview")
 }
 
@@ -509,8 +508,9 @@ final class MainWindowController: NSWindowController {
                 options: [.skipsPackageDescendants]
             ) else { return items }
 
-            for case let url as URL in enumerator {
+            while let obj = enumerator.nextObject() {
                 if Task.isCancelled { break }
+                guard let url = obj as? URL else { continue }
                 let name = url.lastPathComponent
                 if GlobPattern.matches(name, regex: regex) {
                     if let item = FileItem.create(from: url, iconStyle: .system) {
@@ -620,39 +620,18 @@ final class MainWindowController: NSWindowController {
             height: Double(frame.size.height)
         )
 
-        let containerState = browserContainer.captureContainerState()
-
-        let leftTab = TabState(
-            paneState: PaneState(
-                path: containerState.leftURL,
-                viewSettings: .default,
-                scrollPosition: 0,
-                selectedItems: []
-            ),
-            title: containerState.leftURL.lastPathComponent,
-            isPinned: false
-        )
-
-        let rightTab = TabState(
-            paneState: PaneState(
-                path: containerState.rightURL,
-                viewSettings: .default,
-                scrollPosition: 0,
-                selectedItems: []
-            ),
-            title: containerState.rightURL.lastPathComponent,
-            isPinned: false
-        )
+        let state = browserContainer.captureFullContainerState()
 
         return WindowState(
-            leftTabs: [leftTab],
-            rightTabs: [rightTab],
-            activeLeftTab: 0,
-            activeRightTab: 0,
-            isDualPane: containerState.isDualPane,
+            leftTabs: state.leftTabs,
+            rightTabs: state.rightTabs,
+            activeLeftTab: state.activeLeftTab,
+            activeRightTab: state.activeRightTab,
+            isDualPane: state.isDualPane,
             showPreview: showPreview,
             windowFrame: windowFrame,
-            sidebarWidth: Double(sidebarWidthConstraint?.constant ?? CGFloat(SidebarLayout.defaultWidth))
+            sidebarWidth: Double(sidebarWidthConstraint?.constant ?? CGFloat(SidebarLayout.defaultWidth)),
+            showSidebar: showSidebar
         )
     }
 
@@ -664,7 +643,11 @@ final class MainWindowController: NSWindowController {
             window?.setFrame(rect, display: true)
         }
 
-        // Restore sidebar width
+        // Restore sidebar visibility first (toggleSidebar sets width to default),
+        // then override with the saved width.
+        if state.showSidebar != showSidebar {
+            toggleSidebar()
+        }
         sidebarWidthConstraint?.constant = CGFloat(state.sidebarWidth)
 
         // Restore preview state
@@ -672,17 +655,12 @@ final class MainWindowController: NSWindowController {
             togglePreview()
         }
 
-        // Navigate to saved pane paths and restore dual pane state via the container.
-        // No fileExists check — navigateTo handles missing directories gracefully
-        // by showing an empty listing, avoiding a TOCTOU race.
-        let leftURL = state.leftTabs.first?.paneState.path
-            ?? FileManager.default.homeDirectoryForCurrentUser
-        let rightURL = state.rightTabs.first?.paneState.path
-            ?? FileManager.default.homeDirectoryForCurrentUser
-
-        browserContainer.restoreContainerState(
-            leftURL: leftURL,
-            rightURL: rightURL,
+        // Restore all tabs and dual pane state via the container
+        browserContainer.restoreFullContainerState(
+            leftTabs: state.leftTabs,
+            rightTabs: state.rightTabs,
+            activeLeftTab: state.activeLeftTab,
+            activeRightTab: state.activeRightTab,
             isDualPane: state.isDualPane
         )
 
@@ -728,6 +706,7 @@ final class MainWindowController: NSWindowController {
         } else {
             previewViewController.view.isHidden = true
             splitView.setPosition(totalWidth, ofDividerAt: 0)
+            splitView.adjustSubviews()
         }
     }
 
@@ -1020,7 +999,6 @@ extension MainWindowController: NSToolbarDelegate {
             .flexibleSpace,
             .viewMode,
             .searchField,
-            .toggleDualPane,
             .togglePreview,
         ]
     }
@@ -1045,8 +1023,6 @@ extension MainWindowController: NSToolbarDelegate {
             return makeViewModeItem(identifier: itemIdentifier)
         case .searchField:
             return makeSearchItem(identifier: itemIdentifier)
-        case .toggleDualPane:
-            return makeDualPaneItem(identifier: itemIdentifier)
         case .togglePreview:
             return makePreviewItem(identifier: itemIdentifier)
         default:
@@ -1117,17 +1093,6 @@ extension MainWindowController: NSToolbarDelegate {
         return searchItem
     }
 
-    private func makeDualPaneItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "Dual Pane"
-        item.paletteLabel = "Toggle Dual Pane"
-        item.toolTip = "Toggle Dual Pane"
-        item.image = NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: "Dual Pane")
-        item.target = self
-        item.action = #selector(toggleDualPaneAction(_:))
-        return item
-    }
-
     private func makePreviewItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = "Preview"
@@ -1158,10 +1123,6 @@ extension MainWindowController: NSToolbarDelegate {
         let index = sender.selectedSegment
         guard index >= 0, index < modes.count else { return }
         browserContainer.activePaneController().setViewMode(modes[index])
-    }
-
-    @objc private func toggleDualPaneAction(_ sender: Any?) {
-        toggleDualPane()
     }
 
     @objc private func togglePreviewAction(_ sender: Any?) {

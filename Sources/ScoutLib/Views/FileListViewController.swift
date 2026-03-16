@@ -984,6 +984,32 @@ final class FileListViewController: NSViewController {
         }
     }
 
+    /// Selects items matching the given URLs, if present in the current listing.
+    func selectItems(byURLs urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let urlSet = Set(urls)
+        var indexes = IndexSet()
+        for (index, item) in sortedItems.enumerated() {
+            if urlSet.contains(item.url) {
+                indexes.insert(index)
+            }
+        }
+        guard !indexes.isEmpty else { return }
+        tableView.selectRowIndexes(indexes, byExtendingSelection: false)
+        tableView.scrollRowToVisible(indexes.first!)
+    }
+
+    /// Returns the current vertical scroll offset.
+    var scrollOffset: CGFloat {
+        scrollView.contentView.bounds.origin.y
+    }
+
+    /// Restores a previously saved vertical scroll offset.
+    func setScrollOffset(_ offset: CGFloat) {
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
     @objc private func tableViewSingleClick(_ sender: Any?) {
         renameClickTimer?.invalidate()
         renameClickTimer = nil

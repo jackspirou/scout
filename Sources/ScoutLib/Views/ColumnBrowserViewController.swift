@@ -149,6 +149,31 @@ final class ColumnBrowserViewController: NSViewController {
         return []
     }
 
+    /// Selects items matching the given URLs in the last column.
+    func selectItems(byURLs urls: [URL]) {
+        guard !urls.isEmpty, let column = columns.last else { return }
+        let urlSet = Set(urls)
+        var indexes = IndexSet()
+        for (index, item) in column.items.enumerated() {
+            if urlSet.contains(item.url) {
+                indexes.insert(index)
+            }
+        }
+        guard !indexes.isEmpty else { return }
+        column.tableView.selectRowIndexes(indexes, byExtendingSelection: false)
+    }
+
+    /// Returns the current horizontal scroll offset of the outer scroll view.
+    var scrollOffset: CGFloat {
+        outerScrollView.contentView.bounds.origin.x
+    }
+
+    /// Restores a previously saved horizontal scroll offset.
+    func setScrollOffset(_ offset: CGFloat) {
+        outerScrollView.contentView.scroll(to: NSPoint(x: offset, y: 0))
+        outerScrollView.reflectScrolledClipView(outerScrollView.contentView)
+    }
+
     /// Updates the show hidden files setting and reloads.
     func setShowHiddenFiles(_ show: Bool) {
         showHiddenFiles = show

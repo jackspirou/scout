@@ -59,6 +59,7 @@ struct WindowState: Codable, Equatable {
     var showPreview: Bool
     var windowFrame: WindowFrame?
     var sidebarWidth: Double
+    var showSidebar: Bool
 
     static let `default` = WindowState(
         leftTabs: [.default()],
@@ -68,7 +69,8 @@ struct WindowState: Codable, Equatable {
         isDualPane: false,
         showPreview: false,
         windowFrame: nil,
-        sidebarWidth: 220.0
+        sidebarWidth: 220.0,
+        showSidebar: true
     )
 
     init(
@@ -79,7 +81,8 @@ struct WindowState: Codable, Equatable {
         isDualPane: Bool = false,
         showPreview: Bool = false,
         windowFrame: WindowFrame? = nil,
-        sidebarWidth: Double = 220.0
+        sidebarWidth: Double = 220.0,
+        showSidebar: Bool = true
     ) {
         self.leftTabs = leftTabs
         self.rightTabs = rightTabs
@@ -89,6 +92,20 @@ struct WindowState: Codable, Equatable {
         self.showPreview = showPreview
         self.windowFrame = windowFrame
         self.sidebarWidth = sidebarWidth
+        self.showSidebar = showSidebar
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        leftTabs = try container.decodeIfPresent([TabState].self, forKey: .leftTabs) ?? [.default()]
+        rightTabs = try container.decodeIfPresent([TabState].self, forKey: .rightTabs) ?? [.default()]
+        activeLeftTab = try container.decodeIfPresent(Int.self, forKey: .activeLeftTab) ?? 0
+        activeRightTab = try container.decodeIfPresent(Int.self, forKey: .activeRightTab) ?? 0
+        isDualPane = try container.decodeIfPresent(Bool.self, forKey: .isDualPane) ?? false
+        showPreview = try container.decodeIfPresent(Bool.self, forKey: .showPreview) ?? false
+        windowFrame = try container.decodeIfPresent(WindowFrame.self, forKey: .windowFrame)
+        sidebarWidth = try container.decodeIfPresent(Double.self, forKey: .sidebarWidth) ?? 220.0
+        showSidebar = try container.decodeIfPresent(Bool.self, forKey: .showSidebar) ?? true
     }
 }
 

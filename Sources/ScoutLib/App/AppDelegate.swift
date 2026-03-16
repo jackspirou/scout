@@ -75,6 +75,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var batchRenameController: BatchRenameWindowController?
     private var recentFoldersMenu: NSMenu?
     private var clipboardHistoryMenu: NSMenu?
+    private var workspacesMenu: NSMenu?
+    private var workspaceSaveController: WorkspaceSaveWindowController?
+    private var workspaceManagerController: WorkspaceManagerWindowController?
 
     // MARK: - NSApplicationDelegate
 
@@ -168,6 +171,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(buildEditMenu())
         mainMenu.addItem(buildViewMenu())
         mainMenu.addItem(buildGoMenu())
+        mainMenu.addItem(buildWorkspacesMenu())
         mainMenu.addItem(buildWindowMenu())
         mainMenu.addItem(buildHelpMenu())
 
@@ -287,12 +291,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 modifiers: [.command, .option]
             ),
             .item(
-                "Toggle Dual Pane",
-                action: #selector(handleToggleDualPane(_:)),
-                key: "d",
-                modifiers: [.command, .option]
-            ),
-            .item(
                 "Toggle Preview",
                 action: #selector(handleTogglePreview(_:)),
                 key: " ",
@@ -352,6 +350,28 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let goMenu = menuItem.submenu!
         goMenu.addItem(.separator())
         goMenu.addItem(recentItem)
+
+        return menuItem
+    }
+
+    // MARK: - Workspaces Menu
+
+    private func buildWorkspacesMenu() -> NSMenuItem {
+        let menuItem = buildMenu(title: "Workspaces", items: [
+            .item(
+                "Save Workspace...",
+                action: #selector(handleSaveWorkspace(_:)),
+                key: "s",
+                modifiers: [.command, .control]
+            ),
+            .item("Manage Workspaces...", action: #selector(handleManageWorkspaces(_:))),
+            .separator,
+        ])
+
+        // Set up dynamic workspace list via NSMenuDelegate
+        let menu = menuItem.submenu!
+        menu.delegate = self
+        workspacesMenu = menu
 
         return menuItem
     }
@@ -418,11 +438,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let window = NSApp.keyWindow,
               window.windowController is MainWindowController else { return }
         window.close()
-    }
-
-    @objc private func handleToggleDualPane(_ sender: Any?) {
-        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
-        windowController.toggleDualPane()
     }
 
     @objc private func handleTogglePreview(_ sender: Any?) {
@@ -537,6 +552,47 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         connectToServerController = nil
     }
 
+    // MARK: - Workspace Actions
+
+    @objc private func handleSaveWorkspace(_ sender: Any?) {
+        guard let wc = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let saveController = WorkspaceSaveWindowController { [weak self, weak wc] name in
+            guard self != nil, let wc else { return }
+            let state = wc.captureWindowState()
+            let workspace = Workspace(name: name, windowState: state)
+            Task {
+                await PersistenceService.shared.saveWorkspace(workspace)
+            }
+        }
+        workspaceSaveController = saveController
+        saveController.showPanel(relativeTo: wc.window)
+    }
+
+    @objc private func handleManageWorkspaces(_ sender: Any?) {
+        guard let wc = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let manager = WorkspaceManagerWindowController { [weak wc] workspace in
+            var updated = workspace
+            updated.lastUsedAt = Date()
+            Task {
+                await PersistenceService.shared.saveWorkspace(updated)
+            }
+            wc?.restoreWindowState(workspace.windowState)
+        }
+        workspaceManagerController = manager
+        manager.showWindow(nil)
+    }
+
+    @objc private func handleOpenWorkspace(_ sender: NSMenuItem) {
+        guard let workspace = sender.representedObject as? Workspace,
+              let wc = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        var updated = workspace
+        updated.lastUsedAt = Date()
+        Task {
+            await PersistenceService.shared.saveWorkspace(updated)
+        }
+        wc.restoreWindowState(workspace.windowState)
+    }
+
     // MARK: - Recent Folders Actions
 
     @objc func handleRecentLocation(_ sender: NSMenuItem) {
@@ -594,9 +650,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             PaletteAction(name: "Close Tab", shortcut: "⌘W", icon: nil) { [weak windowController] in
                 windowController?.closeCurrentTab()
             },
-            PaletteAction(name: "Toggle Dual Pane", shortcut: "⌥⌘D", icon: nil) { [weak windowController] in
-                windowController?.toggleDualPane()
-            },
             PaletteAction(name: "Toggle Preview", shortcut: "⇧⌘Space", icon: nil) { [weak windowController] in
                 windowController?.togglePreview()
             },
@@ -635,7 +688,6 @@ extension AppDelegate: NSMenuItemValidation {
         let windowRequiredActions: [Selector] = [
             #selector(handleNewTab(_:)),
             #selector(handleCloseTab(_:)),
-            #selector(handleToggleDualPane(_:)),
             #selector(handleTogglePreview(_:)),
             #selector(handleToggleSidebar(_:)),
             #selector(handleToggleHiddenFiles(_:)),
@@ -649,6 +701,8 @@ extension AppDelegate: NSMenuItemValidation {
             #selector(handleSystemIcons(_:)),
             #selector(handleFlatIcons(_:)),
             #selector(handleBatchRename(_:)),
+            #selector(handleSaveWorkspace(_:)),
+            #selector(handleManageWorkspaces(_:)),
         ]
 
         if let action = menuItem.action, windowRequiredActions.contains(action), wc == nil {
@@ -670,9 +724,6 @@ extension AppDelegate: NSMenuItemValidation {
         // Toggle state checkmarks
         if menuItem.action == #selector(handleToggleSidebar(_:)) {
             menuItem.state = (wc?.showSidebar ?? false) ? .on : .off
-        }
-        if menuItem.action == #selector(handleToggleDualPane(_:)) {
-            menuItem.state = (wc?.isDualPane ?? false) ? .on : .off
         }
         if menuItem.action == #selector(handleTogglePreview(_:)) {
             menuItem.state = (wc?.showPreview ?? false) ? .on : .off
@@ -697,6 +748,11 @@ extension AppDelegate: NSMenuDelegate {
     public func menuNeedsUpdate(_ menu: NSMenu) {
         if menu === clipboardHistoryMenu {
             updateClipboardHistoryMenu(menu)
+            return
+        }
+
+        if menu === workspacesMenu {
+            updateWorkspacesMenu(menu)
             return
         }
 
@@ -775,5 +831,33 @@ extension AppDelegate: NSMenuDelegate {
         )
         clearItem.target = self
         menu.addItem(clearItem)
+    }
+
+    private func updateWorkspacesMenu(_ menu: NSMenu) {
+        // Keep the first three static items (Save, Manage, Separator)
+        // and remove any dynamically added workspace items after them.
+        while menu.items.count > 3 {
+            menu.removeItem(at: 3)
+        }
+
+        let workspaces = PersistenceService.shared.listWorkspacesSync()
+
+        if workspaces.isEmpty {
+            let emptyItem = NSMenuItem(title: "No Saved Workspaces", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            menu.addItem(emptyItem)
+            return
+        }
+
+        for workspace in workspaces {
+            let item = NSMenuItem(
+                title: workspace.name,
+                action: #selector(handleOpenWorkspace(_:)),
+                keyEquivalent: ""
+            )
+            item.representedObject = workspace
+            item.target = self
+            menu.addItem(item)
+        }
     }
 }

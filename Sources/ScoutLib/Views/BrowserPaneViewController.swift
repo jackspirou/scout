@@ -20,6 +20,8 @@ final class BrowserPaneViewController: NSViewController {
     private var tabs: [BrowserTabState] = []
     private(set) var activeTabIndex: Int = 0
     private var isActive: Bool = false
+    private var pendingSelectionRestore: [URL]?
+    private var pendingScrollRestore: CGFloat?
 
     private var iconStyle: IconStyle
     private var showHiddenFiles: Bool
@@ -325,6 +327,11 @@ final class BrowserPaneViewController: NSViewController {
 
     /// Add a new tab pointing to the given URL and switch to it.
     func addTab(url: URL) {
+        // Save current tab's selection and scroll position before adding new tab
+        if !tabs.isEmpty {
+            saveActiveTabState()
+        }
+
         let tab = BrowserTabState(url: url)
         tabs.append(tab)
         activeTabIndex = tabs.count - 1
@@ -336,12 +343,20 @@ final class BrowserPaneViewController: NSViewController {
     func closeTab(at index: Int) {
         guard tabs.indices.contains(index), tabs.count > 1 else { return }
 
+        // If closing the active tab, set up selection restore for the new active tab
+        let wasActive = (index == activeTabIndex)
+
         tabs.remove(at: index)
 
         if activeTabIndex >= tabs.count {
             activeTabIndex = tabs.count - 1
         } else if activeTabIndex > index {
             activeTabIndex -= 1
+        }
+
+        if wasActive {
+            pendingSelectionRestore = tabs[activeTabIndex].selectedURLs
+            pendingScrollRestore = tabs[activeTabIndex].scrollOffset
         }
 
         rebuildTabBar()
@@ -593,8 +608,14 @@ final class BrowserPaneViewController: NSViewController {
 
     @objc private func tabClicked(_ sender: NSButton) {
         let index = sender.tag
-        guard tabs.indices.contains(index) else { return }
+        guard tabs.indices.contains(index), index != activeTabIndex else { return }
+
+        // Save current tab's selection and scroll position before switching
+        saveActiveTabState()
+
         activeTabIndex = index
+        pendingSelectionRestore = tabs[activeTabIndex].selectedURLs
+        pendingScrollRestore = tabs[activeTabIndex].scrollOffset
         rebuildTabBar()
         reloadCurrentTab()
     }
@@ -638,6 +659,62 @@ final class BrowserPaneViewController: NSViewController {
         // Directory monitoring starts in fileListViewDidFinishLoading once items are loaded.
     }
 
+    /// Returns the scroll offset of the currently active view.
+    private func currentScrollOffset() -> CGFloat {
+        switch currentViewMode {
+        case .list, .gallery:
+            return fileListViewController.scrollOffset
+        case .icon:
+            return iconGridViewController.scrollOffset
+        case .column:
+            return columnBrowserViewController.scrollOffset
+        }
+    }
+
+    /// Saves the active tab's selection and scroll position.
+    private func saveActiveTabState() {
+        guard tabs.indices.contains(activeTabIndex) else { return }
+        tabs[activeTabIndex].selectedURLs = selectedItems().map(\.url)
+        tabs[activeTabIndex].scrollOffset = currentScrollOffset()
+    }
+
+    private func restorePendingSelection() {
+        guard let urls = pendingSelectionRestore, !urls.isEmpty else {
+            pendingSelectionRestore = nil
+            return
+        }
+        pendingSelectionRestore = nil
+
+        switch currentViewMode {
+        case .list, .gallery:
+            fileListViewController.selectItems(byURLs: urls)
+        case .icon:
+            iconGridViewController.selectItems(byURLs: urls)
+        case .column:
+            columnBrowserViewController.selectItems(byURLs: urls)
+        }
+
+        // Notify delegate of restored selection so preview updates
+        let items = selectedItems()
+        if !items.isEmpty {
+            delegate?.browserPane(self, didSelectItems: items)
+        }
+    }
+
+    private func restorePendingScroll() {
+        guard let offset = pendingScrollRestore else { return }
+        pendingScrollRestore = nil
+
+        switch currentViewMode {
+        case .list, .gallery:
+            fileListViewController.setScrollOffset(offset)
+        case .icon:
+            iconGridViewController.setScrollOffset(offset)
+        case .column:
+            columnBrowserViewController.setScrollOffset(offset)
+        }
+    }
+
     private static let numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -662,6 +739,51 @@ final class BrowserPaneViewController: NSViewController {
         } else {
             searchSpinner.stopAnimation(nil)
         }
+    }
+
+    // MARK: - Session Capture/Restore
+
+    /// Captures all tabs as persistable TabState values.
+    func captureTabStates() -> [TabState] {
+        // Save active tab's current state before capturing
+        if tabs.indices.contains(activeTabIndex) {
+            saveActiveTabState()
+        }
+
+        return tabs.map { tab in
+            TabState(
+                paneState: PaneState(
+                    path: tab.url,
+                    viewSettings: PersistenceService.shared.loadViewSettings(for: tab.url) ?? .default,
+                    scrollPosition: tab.scrollOffset,
+                    selectedItems: tab.selectedURLs
+                ),
+                title: tab.title,
+                isPinned: false
+            )
+        }
+    }
+
+    /// Replaces the current tabs with the given persisted states.
+    func restoreTabs(_ tabStates: [TabState], activeIndex: Int) {
+        guard !tabStates.isEmpty else { return }
+
+        // Clear existing tabs
+        tabs.removeAll()
+
+        // Create BrowserTabState for each persisted tab
+        for tabState in tabStates {
+            var tab = BrowserTabState(url: tabState.paneState.path)
+            tab.selectedURLs = tabState.paneState.selectedItems
+            tab.scrollOffset = tabState.paneState.scrollPosition
+            tabs.append(tab)
+        }
+
+        activeTabIndex = min(activeIndex, tabs.count - 1)
+        pendingSelectionRestore = tabs[activeTabIndex].selectedURLs
+        pendingScrollRestore = tabs[activeTabIndex].scrollOffset
+        rebuildTabBar()
+        reloadCurrentTab()
     }
 }
 
@@ -701,6 +823,10 @@ extension BrowserPaneViewController: FileListViewDelegate {
             let knownPaths = Set(controller.currentItems.map { $0.url.path })
             directoryMonitor.startMonitoring(url: url, knownPaths: knownPaths)
         }
+
+        // Restore selection and scroll position from the tab's saved state
+        restorePendingSelection()
+        restorePendingScroll()
     }
 }
 
@@ -741,6 +867,10 @@ extension BrowserPaneViewController: IconGridViewDelegate {
             let knownPaths = Set(controller.currentItems.map { $0.url.path })
             directoryMonitor.startMonitoring(url: url, knownPaths: knownPaths)
         }
+
+        // Restore selection and scroll position from the tab's saved state
+        restorePendingSelection()
+        restorePendingScroll()
     }
 }
 
@@ -773,5 +903,9 @@ extension BrowserPaneViewController: ColumnBrowserViewDelegate {
             let knownPaths = Set(controller.currentItems.map { $0.url.path })
             directoryMonitor.startMonitoring(url: url, knownPaths: knownPaths)
         }
+
+        // Restore selection and scroll position from the tab's saved state
+        restorePendingSelection()
+        restorePendingScroll()
     }
 }

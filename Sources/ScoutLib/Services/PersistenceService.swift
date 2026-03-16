@@ -167,6 +167,31 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
         return workspaces
     }
 
+    /// Lists all saved workspaces synchronously (for use in NSMenuDelegate callbacks).
+    func listWorkspacesSync() -> [Workspace] {
+        let fileManager = FileManager.default
+        guard
+            let contents = try? fileManager.contentsOfDirectory(
+                at: workspacesDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+        else {
+            return []
+        }
+
+        var workspaces: [Workspace] = []
+
+        for fileURL in contents where fileURL.pathExtension == "json" {
+            if let workspace: Workspace = loadDecodable(from: fileURL) {
+                workspaces.append(workspace)
+            }
+        }
+
+        workspaces.sort { $0.updatedAt > $1.updatedAt }
+        return workspaces
+    }
+
     /// Deletes a workspace.
     func deleteWorkspace(id: UUID) async {
         let fileURL = workspaceFileURL(for: id)

@@ -236,6 +236,31 @@ final class IconGridViewController: NSViewController {
         }
     }
 
+    /// Selects items matching the given URLs, if present in the current listing.
+    func selectItems(byURLs urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let urlSet = Set(urls)
+        var indexPaths = Set<IndexPath>()
+        for (index, item) in sortedItems.enumerated() {
+            if urlSet.contains(item.url) {
+                indexPaths.insert(IndexPath(item: index, section: 0))
+            }
+        }
+        guard !indexPaths.isEmpty else { return }
+        collectionView.selectionIndexPaths = indexPaths
+    }
+
+    /// Returns the current vertical scroll offset.
+    var scrollOffset: CGFloat {
+        scrollView.contentView.bounds.origin.y
+    }
+
+    /// Restores a previously saved vertical scroll offset.
+    func setScrollOffset(_ offset: CGFloat) {
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
     /// Updates the icon size and refreshes the layout.
     func setIconSize(_ size: CGFloat) {
         iconSize = max(32, min(128, size))

@@ -9,6 +9,8 @@ struct BrowserTabState {
     var title: String
     var backStack: [URL]
     var forwardStack: [URL]
+    var selectedURLs: [URL]
+    var scrollOffset: CGFloat
 
     init(url: URL) {
         id = UUID()
@@ -16,5 +18,7 @@ struct BrowserTabState {
         title = url.lastPathComponent
         backStack = []
         forwardStack = []
+        selectedURLs = []
+        scrollOffset = 0
     }
 }

@@ -211,19 +211,33 @@ final class BrowserContainerViewController: NSViewController {
         rightPane.navigateTo(url: url)
     }
 
-    /// Captures the container's state for session persistence.
-    func captureContainerState() -> (leftURL: URL, rightURL: URL, isDualPane: Bool) {
-        (leftPaneURL(), rightPaneURL(), isDualPaneActive)
+    /// Captures the full container state including all tabs for both panes.
+    func captureFullContainerState() -> (
+        leftTabs: [TabState], rightTabs: [TabState],
+        activeLeftTab: Int, activeRightTab: Int,
+        isDualPane: Bool
+    ) {
+        (
+            leftPane.captureTabStates(),
+            rightPane.captureTabStates(),
+            leftPane.activeTabIndex,
+            rightPane.activeTabIndex,
+            isDualPaneActive
+        )
     }
 
-    /// Restores the container from a persisted session state.
-    func restoreContainerState(leftURL: URL, rightURL: URL, isDualPane: Bool) {
-        navigateLeftPane(to: leftURL)
+    /// Restores the full container state including all tabs for both panes.
+    func restoreFullContainerState(
+        leftTabs: [TabState], rightTabs: [TabState],
+        activeLeftTab: Int, activeRightTab: Int,
+        isDualPane: Bool
+    ) {
+        leftPane.restoreTabs(leftTabs, activeIndex: activeLeftTab)
         if isDualPane, !isDualPaneActive {
             toggleDualPane()
         }
         if isDualPaneActive {
-            navigateRightPane(to: rightURL)
+            rightPane.restoreTabs(rightTabs, activeIndex: activeRightTab)
         }
     }
 
