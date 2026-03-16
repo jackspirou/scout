@@ -34,20 +34,25 @@ jobs:
       - name: Build .app bundle
         run: make app
 
+      - name: Capture screenshot
+        run: make screenshot
+        continue-on-error: true
+
       - name: Create DMG
         run: make dmg
 
       - name: Create zip
         run: ditto -c -k --sequesterRsrc --keepParent build/Scout.app Scout.app.zip
 
-      - name: Generate changelog
+      - name: Generate changelog and commit docs
         run: |
           brew install git-cliff
           git-cliff --output CHANGELOG.md
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CHANGELOG.md
-          git commit -m "docs: update CHANGELOG.md for ${{ github.ref_name }}" || true
+          git add docs/screenshot.png || true
+          git commit -m "docs: update CHANGELOG.md and screenshot for ${{ github.ref_name }}" || true
           git push origin HEAD:main || true
 
       - name: Determine prerelease

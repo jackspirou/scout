@@ -24,7 +24,7 @@ DMG_FILE       := $(BUILD_DIR)/$(APP_NAME).dmg
 # ------------------------------------------------------------------
 # Phony targets
 # ------------------------------------------------------------------
-.PHONY: build release app dmg run clean install uninstall lint test version changelog
+.PHONY: build release app dmg run clean install uninstall lint test version changelog screenshot
 
 # ------------------------------------------------------------------
 # build (default) – debug build
@@ -144,6 +144,12 @@ test:
 # ------------------------------------------------------------------
 version:
 	@/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$(INFO_PLIST)"
+
+# ------------------------------------------------------------------
+# screenshot – capture a screenshot of the app window
+# ------------------------------------------------------------------
+screenshot: app
+	swift Tools/screenshot.swift
 
 # ------------------------------------------------------------------
 # changelog – regenerate CHANGELOG.md from conventional commits

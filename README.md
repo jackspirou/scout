@@ -6,8 +6,10 @@ A modern file manager for macOS.
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
 Scout is a native macOS file manager built with Swift and AppKit, designed to
-replace Finder for power users. It is fast, keyboard-first, and features a
-dual-pane layout that makes file management efficient and intuitive.
+replace Finder for power users. It is fast, keyboard-first, and features
+tabbed browsing with session memory that makes file management efficient.
+
+![Scout](docs/screenshot.png)
 
 ## Why Scout?
 
@@ -16,8 +18,8 @@ demand more from their file manager:
 
 - **No true cut-and-paste.** Finder only supports copy-paste. Moving files
   requires dragging or using a keyboard shortcut that is easy to forget.
-- **No dual-pane layout.** Comparing or moving files between two directories
-  means juggling multiple windows.
+- **No tabs with memory.** Comparing or moving files between directories
+  means juggling multiple windows with no state memory.
 - **View settings do not persist.** Switching a folder to list view resets the
   next time you open it.
 - **Weak search.** Finder search is slow and lacks scoped filtering by file
@@ -27,15 +29,16 @@ demand more from their file manager:
 
 ## Features
 
-- [x] Dual-pane layout (Cmd+D)
 - [x] True cut/copy/move (Cmd+X/C/V)
+- [x] Tabbed browsing with per-tab selection and scroll memory
+- [x] Inline preview pane for images, text, audio, video, and PDFs
 - [x] Persistent per-folder view settings
-- [x] Keyboard-first navigation with vim bindings
+- [x] Keyboard-first navigation
 - [x] Command palette (Cmd+Shift+P)
-- [x] Scoped search with filter tokens
-- [x] File transfer queue with progress
-- [x] Tabbed browsing with session memory
-- [x] Workspaces
+- [x] Named workspaces — save and restore window layouts
+- [x] Session restore — tabs, selections, and scroll positions on relaunch
+- [x] Scoped search with searchfs(2) for instant filename matching
+- [x] Global hotkey (Opt+Space) to summon Scout from anywhere
 
 ## Planned
 
@@ -81,7 +84,7 @@ make dmg      # Create a distributable .dmg image
 
 | Action                  | Shortcut         |
 |-------------------------|------------------|
-| Toggle dual pane        | Cmd+D            |
+| Toggle preview pane     | Cmd+Shift+Space  |
 | Cut                     | Cmd+X            |
 | Copy                    | Cmd+C            |
 | Paste / Move            | Cmd+V            |
@@ -99,7 +102,7 @@ make dmg      # Create a distributable .dmg image
 | Delete                  | Cmd+Backspace    |
 | New folder              | Cmd+Shift+N      |
 | Path bar editing        | Cmd+L            |
-| Save workspace          | Cmd+Shift+S      |
+| Save workspace          | Ctrl+Cmd+S       |
 | Summon Scout            | Opt+Space        |
 
 ## License
