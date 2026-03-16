@@ -47,6 +47,11 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
         static let showHiddenFiles = "scout.showHiddenFiles"
         static let sidebarFavorites = "scout.sidebarFavorites"
         static let recentServers = "scout.recentServers"
+        static let scoutDropNickname = "scout.scoutDropNickname"
+        static let scoutDropReceiveDirectory = "scout.scoutDropReceiveDirectory"
+        static let scoutDropDeviceID = "scout.scoutDropDeviceID"
+        static let scoutDropTrustedPeers = "scout.scoutDropTrustedPeers"
+        static let scoutDropPeerKeyHashes = "scout.scoutDropPeerKeyHashes"
     }
 
     private enum FileName {
@@ -283,6 +288,80 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
 
     func loadRecentServers() -> [String] {
         defaults.stringArray(forKey: StoreKey.recentServers) ?? []
+    }
+
+    // MARK: - ScoutDrop
+
+    func saveScoutDropNickname(_ name: String) {
+        defaults.set(name, forKey: StoreKey.scoutDropNickname)
+    }
+
+    func loadScoutDropNickname() -> String {
+        defaults.string(forKey: StoreKey.scoutDropNickname) ?? Host.current().localizedName ?? "Mac"
+    }
+
+    func saveScoutDropReceiveDirectory(_ url: URL) {
+        defaults.set(url.path, forKey: StoreKey.scoutDropReceiveDirectory)
+    }
+
+    func loadScoutDropReceiveDirectory() -> URL {
+        if let path = defaults.string(forKey: StoreKey.scoutDropReceiveDirectory) {
+            return URL(fileURLWithPath: path)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Downloads/ScoutDrop")
+    }
+
+    // MARK: - ScoutDrop Device ID & Trusted Peers
+
+    func loadScoutDropDeviceID() -> String {
+        if let existing = defaults.string(forKey: StoreKey.scoutDropDeviceID) {
+            return existing
+        }
+        let newID = UUID().uuidString
+        defaults.set(newID, forKey: StoreKey.scoutDropDeviceID)
+        return newID
+    }
+
+    func saveScoutDropTrustedPeer(deviceID: String, name: String) {
+        var peers = loadScoutDropTrustedPeers()
+        peers[deviceID] = name
+        defaults.set(peers, forKey: StoreKey.scoutDropTrustedPeers)
+    }
+
+    func loadScoutDropTrustedPeers() -> [String: String] {
+        defaults.dictionary(forKey: StoreKey.scoutDropTrustedPeers) as? [String: String] ?? [:]
+    }
+
+    func removeScoutDropTrustedPeer(deviceID: String) {
+        var peers = loadScoutDropTrustedPeers()
+        peers.removeValue(forKey: deviceID)
+        defaults.set(peers, forKey: StoreKey.scoutDropTrustedPeers)
+        removeScoutDropPeerKeyHash(deviceID: deviceID)
+    }
+
+    func isScoutDropPeerTrusted(deviceID: String) -> Bool {
+        loadScoutDropTrustedPeers()[deviceID] != nil
+    }
+
+    func saveScoutDropPeerKeyHash(deviceID: String, keyHash: String) {
+        var hashes = loadScoutDropPeerKeyHashes()
+        hashes[deviceID] = keyHash
+        defaults.set(hashes, forKey: StoreKey.scoutDropPeerKeyHashes)
+    }
+
+    func loadScoutDropPeerKeyHashes() -> [String: String] {
+        defaults.dictionary(forKey: StoreKey.scoutDropPeerKeyHashes) as? [String: String] ?? [:]
+    }
+
+    func loadScoutDropPeerKeyHash(deviceID: String) -> String? {
+        loadScoutDropPeerKeyHashes()[deviceID]
+    }
+
+    func removeScoutDropPeerKeyHash(deviceID: String) {
+        var hashes = loadScoutDropPeerKeyHashes()
+        hashes.removeValue(forKey: deviceID)
+        defaults.set(hashes, forKey: StoreKey.scoutDropPeerKeyHashes)
     }
 
     // MARK: - Private Helpers

@@ -28,6 +28,7 @@ final class BrowserPaneViewController: NSViewController {
     private let pathBarView = PathBarView()
     private let fileListViewController: FileListViewController
     private let statusBar = NSTextField(labelWithString: "0 items")
+    private let searchSpinner = NSProgressIndicator()
     private let directoryMonitor = DirectoryMonitor()
     private var recentLocationTimer: Timer?
 
@@ -167,6 +168,13 @@ final class BrowserPaneViewController: NSViewController {
         statusBar.alignment = .left
         statusBar.lineBreakMode = .byTruncatingTail
         view.addSubview(statusBar)
+
+        // Spinning indicator shown during active searches.
+        searchSpinner.translatesAutoresizingMaskIntoConstraints = false
+        searchSpinner.style = .spinning
+        searchSpinner.controlSize = .small
+        searchSpinner.isDisplayedWhenStopped = false
+        view.addSubview(searchSpinner)
     }
 
     private func configureActiveIndicator() {
@@ -196,8 +204,12 @@ final class BrowserPaneViewController: NSViewController {
             contentContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             contentContainerView.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
 
+            // Search spinner to the left of the status bar text
+            searchSpinner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            searchSpinner.centerYAnchor.constraint(equalTo: statusBar.centerYAnchor),
+
             // Status bar at the bottom
-            statusBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            statusBar.leadingAnchor.constraint(equalTo: searchSpinner.trailingAnchor, constant: 4),
             statusBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
             statusBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             statusBar.heightAnchor.constraint(equalToConstant: Layout.statusBarHeight),
@@ -213,29 +225,37 @@ final class BrowserPaneViewController: NSViewController {
     // MARK: - Public API
 
     /// Displays search results (e.g. files matching a tag) in the file list view.
+    /// Called once for the first batch and again for each subsequent batch.
+    /// Only performs view-mode switch, tab rebuild, and monitor stop on the first call.
     func displaySearchResults(_ items: [FileItem], title: String) {
         guard !tabs.isEmpty else { return }
 
-        // Switch to list view for search results
-        if currentViewMode != .list {
-            setViewMode(.list)
+        let isFirstBatch = (currentViewMode != .list || tabs[activeTabIndex].title != title)
+
+        if isFirstBatch {
+            // Switch to list view for search results
+            if currentViewMode != .list {
+                setViewMode(.list)
+            }
+
+            // Stop directory monitoring since we're not viewing a real directory
+            directoryMonitor.stopMonitoring()
+
+            // Update the tab title and path bar to reflect the search
+            var tab = tabs[activeTabIndex]
+            tab.title = title
+            tabs[activeTabIndex] = tab
+            rebuildTabBar()
+
+            // Clear the path bar since search results don't correspond to a single directory
+            pathBarView.update(with: FileManager.default.homeDirectoryForCurrentUser)
         }
-
-        // Stop directory monitoring since we're not viewing a real directory
-        directoryMonitor.stopMonitoring()
-
-        // Update the tab title and path bar to reflect the search
-        var tab = tabs[activeTabIndex]
-        tab.title = title
-        tabs[activeTabIndex] = tab
-        rebuildTabBar()
-
-        // Clear the path bar since search results don't correspond to a single directory
-        pathBarView.update(with: FileManager.default.homeDirectoryForCurrentUser)
 
         fileListViewController.displaySearchResults(items)
         updateStatusBar(itemCount: items.count, selectedCount: 0)
-        delegate?.browserPane(self, didSelectItems: [])
+        if isFirstBatch {
+            delegate?.browserPane(self, didSelectItems: [])
+        }
     }
 
     /// Navigate the current tab to the given URL.
@@ -612,11 +632,27 @@ final class BrowserPaneViewController: NSViewController {
         // Directory monitoring starts in fileListViewDidFinishLoading once items are loaded.
     }
 
+    private static let numberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter
+    }()
+
     private func updateStatusBar(itemCount: Int, selectedCount: Int) {
+        let formattedCount = Self.numberFormatter.string(from: NSNumber(value: itemCount)) ?? "\(itemCount)"
         if selectedCount > 0 {
-            statusBar.stringValue = "\(itemCount) items, \(selectedCount) selected"
+            let formattedSelected = Self.numberFormatter.string(from: NSNumber(value: selectedCount)) ?? "\(selectedCount)"
+            statusBar.stringValue = "\(formattedCount) items, \(formattedSelected) selected"
         } else {
-            statusBar.stringValue = "\(itemCount) items"
+            statusBar.stringValue = "\(formattedCount) items"
+        }
+    }
+
+    func setSearchInProgress(_ inProgress: Bool) {
+        if inProgress {
+            searchSpinner.startAnimation(nil)
+        } else {
+            searchSpinner.stopAnimation(nil)
         }
     }
 }

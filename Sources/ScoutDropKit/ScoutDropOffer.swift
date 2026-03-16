@@ -1,0 +1,1 @@
+../Scout/Models/ScoutDropOffer.swift

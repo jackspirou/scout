@@ -25,4 +25,20 @@ protocol PersistenceServiceProtocol {
     // MARK: - Recent Servers
     func saveRecentServers(_ servers: [String])
     func loadRecentServers() -> [String]
+
+    // MARK: - ScoutDrop
+    func saveScoutDropNickname(_ name: String)
+    func loadScoutDropNickname() -> String
+    func saveScoutDropReceiveDirectory(_ url: URL)
+    func loadScoutDropReceiveDirectory() -> URL
+
+    // MARK: - ScoutDrop Device ID & Trusted Peers
+    func loadScoutDropDeviceID() -> String
+    func saveScoutDropTrustedPeer(deviceID: String, name: String)
+    func loadScoutDropTrustedPeers() -> [String: String]
+    func removeScoutDropTrustedPeer(deviceID: String)
+    func isScoutDropPeerTrusted(deviceID: String) -> Bool
+    func saveScoutDropPeerKeyHash(deviceID: String, keyHash: String)
+    func loadScoutDropPeerKeyHash(deviceID: String) -> String?
+    func removeScoutDropPeerKeyHash(deviceID: String)
 }

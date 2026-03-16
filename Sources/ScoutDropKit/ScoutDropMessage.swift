@@ -1,0 +1,1 @@
+../Scout/Models/ScoutDropMessage.swift

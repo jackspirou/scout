@@ -331,14 +331,18 @@ final class FileListViewController: NSViewController {
     }
 
     /// Displays an arbitrary list of file items (e.g. search results) without loading from a directory.
+    /// Called for each batch of search results. Only scrolls to top on the first batch.
     func displaySearchResults(_ items: [FileItem]) {
+        let isFirstBatch = (currentDirectoryURL != nil || allItems.isEmpty)
         loadingTask?.cancel()
         currentDirectoryURL = nil
         filterQuery = ""  // Search results are already filtered; don't apply local filter on top.
         allItems = items
         sortItems()
         tableView.reloadData()
-        tableView.scrollRowToVisible(0)
+        if isFirstBatch {
+            tableView.scrollRowToVisible(0)
+        }
         delegate?.fileListViewDidFinishLoading(self, itemCount: sortedItems.count)
     }
 

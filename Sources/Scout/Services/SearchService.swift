@@ -221,7 +221,7 @@ actor SearchService: SearchServiceProtocol {
         var queryParts: [String] = []
 
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        let hasWildcards = trimmed.contains("*") || trimmed.contains("?")
+        let hasWildcards = GlobPattern.hasWildcards(trimmed)
 
         if trimmed.isEmpty {
             queryParts.append("kMDItemFSName == '*'")

@@ -73,7 +73,12 @@ final class MainWindowController: NSWindowController {
 
     // Search state
     private let searchService = SearchService()
+    private let searchfsService = SearchfsService()
+    private let scoutDropService = ScoutDropService()
     private var searchTask: Task<Void, Never>?
+    private var scoutDropPeerTask: Task<Void, Never>?
+    private var scoutDropOfferTask: Task<Void, Never>?
+    private var scoutDropVerificationTask: Task<Void, Never>?
     private var isSearchActive = false
     private var preSearchURL: URL?
     private var searchScopeBar: NSView?
@@ -182,6 +187,49 @@ final class MainWindowController: NSWindowController {
         sidebarViewController.onSearchTag = { [weak self] tagName in
             self?.searchForTag(tagName)
         }
+
+        // Wire sidebar Recents callback
+        sidebarViewController.onShowRecents = { [weak self] in
+            self?.showRecents()
+        }
+
+        // Wire sidebar AirDrop callback
+        sidebarViewController.onAirDrop = { [weak self] in
+            self?.showAirDrop()
+        }
+
+        // Wire sidebar ScoutDrop callback (drag files onto a nearby peer)
+        sidebarViewController.onScoutDrop = { [weak self] urls, peer in
+            guard let self else { return }
+            Task {
+                do {
+                    let isTrusted = peer.deviceID.map {
+                        PersistenceService.shared.isScoutDropPeerTrusted(deviceID: $0)
+                    } ?? false
+
+                    try await self.scoutDropService.sendFiles(urls, to: peer)
+
+                    // Mark as trusted after successful transfer (TOFU).
+                    if !isTrusted, let deviceID = peer.deviceID {
+                        PersistenceService.shared.saveScoutDropTrustedPeer(
+                            deviceID: deviceID,
+                            name: peer.name
+                        )
+                    }
+                } catch {
+                    await MainActor.run {
+                        let alert = NSAlert()
+                        alert.messageText = "ScoutDrop Failed"
+                        alert.informativeText = error.localizedDescription
+                        alert.alertStyle = .warning
+                        alert.runModal()
+                    }
+                }
+            }
+        }
+
+        // Start ScoutDrop advertising and browsing
+        startScoutDrop()
 
         // --- Split view (browser + preview, unchanged 2-pane layout) ---
         splitView.isVertical = true
@@ -314,31 +362,38 @@ final class MainWindowController: NSWindowController {
         searchTask?.cancel()
 
         let scope: SearchScope
-        if searchScopeSegment?.selectedSegment == 1 {
-            scope = .fullDisk
-        } else {
+        switch searchScopeSegment?.selectedSegment {
+        case 0:
             let currentURL = preSearchURL ?? browserContainer.activePaneController().currentURL()
             scope = .subfolder(currentURL)
+        case 2:
+            scope = .fullDisk
+        default:
+            // Segment 1 (user home folder) is the default.
+            scope = .subfolder(FileManager.default.homeDirectoryForCurrentUser)
         }
+
+        browserContainer.activePaneController().setSearchInProgress(true)
 
         searchTask = Task { [weak self] in
             guard let self else { return }
 
-            // Spotlight (NSMetadataQuery) does not guarantee full coverage of the filesystem.
-            // Some items — particularly directories, recently created files, and items in
-            // certain locations — may have null metadata (kMDItemFSName == null) and won't
-            // appear in Spotlight results. This is a known macOS limitation: Spotlight indexes
-            // asynchronously and may never index some directory entries.
+            // Three search backends, each suited to a different scope:
             //
-            // To provide complete results for folder-scoped searches, we run a filesystem
-            // search first using FileManager.enumerator (which reads the actual directory
-            // tree), then layer Spotlight results on top. Results are deduplicated by URL
-            // so items found by both sources appear only once.
+            // 1. FileManager.enumerator — folder-scoped searches. Walks the directory tree
+            //    directly, catching everything Spotlight misses (unindexed directories, new files).
             //
-            // For "This Mac" (fullDisk) scope, we rely on Spotlight alone since a full
-            // filesystem walk would be prohibitively slow.
+            // 2. Spotlight (NSMetadataQuery) — runs for both scopes. Provides user-relevant,
+            //    content-aware results from indexed volumes.
+            //
+            // 3. searchfs() — external/non-Spotlight-indexed volumes only. Reads the APFS/HFS+
+            //    catalog B-tree directly at kernel level. Fills the gap where Spotlight has no
+            //    coverage (e.g., USB drives, external APFS volumes).
+            //
+            // Results from all backends are deduplicated by URL.
             var seenURLs = Set<URL>()
             var allItems: [FileItem] = []
+            let title = "Search: \(query)"
 
             let folderURL: URL?
             switch scope {
@@ -348,8 +403,7 @@ final class MainWindowController: NSWindowController {
                 folderURL = nil
             }
 
-            // Phase 1: Filesystem search — immediate, complete results for the scoped directory.
-            // This catches everything Spotlight misses (unindexed directories, new files, etc.).
+            // Phase 1: Folder-scoped — FileManager.enumerator for complete directory results.
             if let folderURL {
                 let fsItems = await self.filesystemSearch(query: query, in: folderURL)
                 if !Task.isCancelled && !fsItems.isEmpty {
@@ -358,19 +412,17 @@ final class MainWindowController: NSWindowController {
                             allItems.append(item)
                         }
                     }
-                    let items = allItems
+                    let snapshot = allItems
                     await MainActor.run {
                         self.browserContainer.activePaneController().displaySearchResults(
-                            items,
-                            title: "Search: \(query)"
+                            snapshot, title: title
                         )
                     }
                 }
             }
 
-            // Phase 2: Spotlight search — may find additional items that the filesystem walk
-            // missed (e.g., items matched by content type filters) or confirm existing results.
-            // Duplicates are skipped via the seenURLs set.
+            // Phase 2: Spotlight — runs for both scopes. Provides user-relevant results
+            // from indexed volumes. For "This Mac", this is the primary search backend.
             let stream = await self.searchService.search(query: query, scope: scope)
             for await batch in stream {
                 guard !Task.isCancelled else { return }
@@ -379,13 +431,41 @@ final class MainWindowController: NSWindowController {
                         allItems.append(item)
                     }
                 }
-                let items = allItems
+                let snapshot = allItems
                 await MainActor.run {
                     self.browserContainer.activePaneController().displaySearchResults(
-                        items,
-                        title: "Search: \(query)"
+                        snapshot, title: title
                     )
                 }
+            }
+
+            // Phase 3: searchfs() — non-Spotlight-indexed volumes only (e.g., external
+            // USB/Thunderbolt APFS/HFS+ drives). Fills the gap where Spotlight has no
+            // coverage. Skipped for folder-scoped searches since the folder is on
+            // an indexed volume (handled by FileManager.enumerator above).
+            if folderURL == nil {
+                let searchfsStream = await self.searchfsService.searchNonIndexedVolumes(
+                    query: query, maxResults: 10_000
+                )
+                for await batch in searchfsStream {
+                    guard !Task.isCancelled else { return }
+                    for item in batch {
+                        if seenURLs.insert(item.url).inserted {
+                            allItems.append(item)
+                        }
+                    }
+                    let snapshot = allItems
+                    await MainActor.run {
+                        self.browserContainer.activePaneController().displaySearchResults(
+                            snapshot, title: title
+                        )
+                    }
+                }
+            }
+
+            // Search complete — stop the spinner. exitSearch() also stops it for cancellations.
+            await MainActor.run { [weak self] in
+                self?.browserContainer.activePaneController().setSearchInProgress(false)
             }
         }
     }
@@ -409,30 +489,9 @@ final class MainWindowController: NSWindowController {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return [] }
 
-        let hasWildcards = trimmed.contains("*") || trimmed.contains("?")
-
-        // Build a regex pattern from the query for matching.
-        let pattern: String
-        if hasWildcards {
-            // Convert glob to regex: * → .*, ? → ., escape everything else.
-            var regex = "^"
-            for char in trimmed {
-                switch char {
-                case "*": regex += ".*"
-                case "?": regex += "."
-                case ".", "(", ")", "[", "]", "{", "}", "^", "$", "|", "+", "\\": regex += "\\\(char)"
-                default: regex += String(char)
-                }
-            }
-            regex += "$"
-            pattern = regex
-        } else {
-            // Substring match.
-            let escaped = NSRegularExpression.escapedPattern(for: trimmed)
-            pattern = ".*\(escaped).*"
-        }
-
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+        // Build a regex from the query using the shared GlobPattern utility.
+        // Supports glob wildcards (*, ?) and plain text substring matching.
+        guard let regex = GlobPattern.buildRegex(from: trimmed) else {
             return []
         }
 
@@ -452,8 +511,7 @@ final class MainWindowController: NSWindowController {
                 for case let url as URL in enumerator {
                     if Task.isCancelled { break }
                     let name = url.lastPathComponent
-                    let range = NSRange(name.startIndex..., in: name)
-                    if regex.firstMatch(in: name, range: range) != nil {
+                    if GlobPattern.matches(name, regex: regex) {
                         if let item = FileItem.create(from: url, iconStyle: .system) {
                             items.append(item)
                         }
@@ -472,6 +530,8 @@ final class MainWindowController: NSWindowController {
         searchTask?.cancel()
         searchTask = nil
         Task { await searchService.cancelActiveSearch() }
+        Task { await searchfsService.cancelActiveSearch() }
+        browserContainer.activePaneController().setSearchInProgress(false)
 
         if isSearchActive, let url = preSearchURL {
             browserContainer.activePaneController().navigateTo(url: url)
@@ -501,11 +561,21 @@ final class MainWindowController: NSWindowController {
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.wantsLayer = true
 
-        let segment = NSSegmentedControl(labels: ["Current Folder", "This Mac"], trackingMode: .selectOne, target: self, action: #selector(searchScopeChanged(_:)))
-        segment.selectedSegment = 0
+        let homeURL = FileManager.default.homeDirectoryForCurrentUser
+        let homeName = homeURL.lastPathComponent
+
+        let segment = NSSegmentedControl(labels: ["Current Folder", homeName, "This Mac"], trackingMode: .selectOne, target: self, action: #selector(searchScopeChanged(_:)))
+        segment.selectedSegment = 1
         segment.translatesAutoresizingMaskIntoConstraints = false
         segment.controlSize = .small
         segment.segmentStyle = .capsule
+
+        // Show a folder icon on the user home segment.
+        let folderIcon = NSWorkspace.shared.icon(for: .folder)
+        folderIcon.size = NSSize(width: 14, height: 14)
+        segment.setImage(folderIcon, forSegment: 1)
+        segment.setImageScaling(.scaleProportionallyDown, forSegment: 1)
+
         bar.addSubview(segment)
         searchScopeSegment = segment
 
@@ -664,6 +734,207 @@ final class MainWindowController: NSWindowController {
         } else {
             previewViewController.clearPreview()
         }
+    }
+
+    // MARK: - AirDrop
+
+    private func showAirDrop() {
+        let selectedItems = browserContainer.activePaneController().selectedItems()
+        let urls = selectedItems.map(\.url)
+
+        if !urls.isEmpty,
+           let service = NSSharingService(named: .sendViaAirDrop),
+           service.canPerform(withItems: urls) {
+            // Files selected — show the system AirDrop device picker to send them.
+            service.perform(withItems: urls)
+        } else {
+            // No files selected — open Finder's AirDrop window so the user can
+            // browse nearby devices. This is the same approach Path Finder and
+            // other third-party file managers use; there is no public API to
+            // embed the AirDrop device browser in a non-Finder app.
+            let airdropApp = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/Applications/AirDrop.app")
+            NSWorkspace.shared.open(airdropApp)
+        }
+    }
+
+    // MARK: - ScoutDrop
+
+    private func startScoutDrop() {
+        let nickname = PersistenceService.shared.loadScoutDropNickname()
+        let deviceID = PersistenceService.shared.loadScoutDropDeviceID()
+
+        // Start advertising and browsing on the ScoutDrop actor.
+        Task {
+            await scoutDropService.startAdvertising(nickname: nickname, deviceID: deviceID)
+            await scoutDropService.startBrowsing()
+        }
+
+        // Consume peer updates and push them to the sidebar.
+        scoutDropPeerTask = Task { [weak self] in
+            guard let self else { return }
+            for await peers in self.scoutDropService.peers {
+                guard !Task.isCancelled else { return }
+                await MainActor.run { [weak self] in
+                    self?.sidebarViewController.updateNearbyPeers(peers)
+                }
+            }
+        }
+
+        // Consume incoming offers and show accept/decline alerts.
+        scoutDropOfferTask = Task { [weak self] in
+            guard let self else { return }
+            for await offer in self.scoutDropService.incomingOffers {
+                guard !Task.isCancelled else { return }
+                await self.showIncomingOfferAlert(offer)
+            }
+        }
+
+        // Consume outgoing verification codes and show them to the sender.
+        scoutDropVerificationTask = Task { [weak self] in
+            guard let self else { return }
+            for await (peerName, code) in self.scoutDropService.outgoingVerifications {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Sending to \(peerName)"
+                    alert.informativeText = "Verification code: \(code)\nTell the recipient this code to confirm."
+                    alert.alertStyle = .informational
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+            }
+        }
+    }
+
+    private func showIncomingOfferAlert(_ offer: ScoutDropOffer) async {
+        let isTrusted = !offer.senderDeviceID.isEmpty
+            && PersistenceService.shared.isScoutDropPeerTrusted(deviceID: offer.senderDeviceID)
+
+        // TOFU certificate pinning: verify the peer's public key hash against the stored hash.
+        if isTrusted, let peerHash = offer.peerPublicKeyHash {
+            let storedHash = PersistenceService.shared.loadScoutDropPeerKeyHash(
+                deviceID: offer.senderDeviceID
+            )
+            if let storedHash, storedHash != peerHash {
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Security Warning"
+                    alert.informativeText = """
+                        The identity of "\(offer.senderName)" has changed since you last \
+                        connected. This could mean someone is impersonating this device.\n\n\
+                        The transfer has been automatically declined. If this device was \
+                        recently reinstalled, remove it from trusted peers and try again.
+                        """
+                    alert.alertStyle = .critical
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+                await scoutDropService.declineOffer(offer.id)
+                return
+            }
+        }
+
+        await MainActor.run { [weak self] in
+            guard let self else { return }
+            let alert = NSAlert()
+            alert.messageText = "\(offer.senderName) wants to send you files"
+
+            var info = "\(offer.fileCount) item\(offer.fileCount == 1 ? "" : "s") (\(offer.formattedSize))"
+            if !isTrusted, !offer.verificationCode.isEmpty {
+                info += "\n\nVerification code: \(offer.verificationCode)"
+                info += "\nConfirm this code with the sender before accepting."
+            }
+            alert.informativeText = info
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Accept")
+            alert.addButton(withTitle: "Decline")
+
+            let response = alert.runModal()
+            Task {
+                if response == .alertFirstButtonReturn {
+                    await self.scoutDropService.acceptOffer(offer.id)
+                    // Mark peer as trusted after successful acceptance (TOFU).
+                    if !isTrusted, !offer.senderDeviceID.isEmpty {
+                        PersistenceService.shared.saveScoutDropTrustedPeer(
+                            deviceID: offer.senderDeviceID,
+                            name: offer.senderName
+                        )
+                    }
+                    // Store the peer's public key hash for TOFU certificate pinning.
+                    if let peerHash = offer.peerPublicKeyHash, !offer.senderDeviceID.isEmpty {
+                        PersistenceService.shared.saveScoutDropPeerKeyHash(
+                            deviceID: offer.senderDeviceID,
+                            keyHash: peerHash
+                        )
+                    }
+                } else {
+                    await self.scoutDropService.declineOffer(offer.id)
+                }
+            }
+        }
+    }
+
+    // MARK: - Recents
+
+    /// Observation token for the recents metadata query notification.
+    private static var recentsSearchObserver: NSObjectProtocol?
+
+    /// Strong reference to the in-flight recents query.
+    private var recentsSearchQuery: NSMetadataQuery?
+
+    private func showRecents() {
+        recentsSearchQuery?.stop()
+        recentsSearchQuery = nil
+
+        let query = NSMetadataQuery()
+        // Find files opened in the last 7 days, sorted by last used date (descending).
+        // Exclude directories — Recents in Finder only shows documents.
+        query.predicate = NSPredicate(
+            fromMetadataQueryString: "kMDItemLastUsedDate >= $time.today(-7) && kMDItemContentTypeTree != 'public.folder'"
+        ) ?? NSPredicate(value: false)
+        query.searchScopes = [NSMetadataQueryLocalComputerScope]
+        query.sortDescriptors = [NSSortDescriptor(key: NSMetadataItemLastUsedDateKey, ascending: false)]
+
+        // Remove any previous observer.
+        if let previousObserver = Self.recentsSearchObserver {
+            NotificationCenter.default.removeObserver(previousObserver)
+            Self.recentsSearchObserver = nil
+        }
+
+        Self.recentsSearchObserver = NotificationCenter.default.addObserver(
+            forName: .NSMetadataQueryDidFinishGathering,
+            object: query,
+            queue: .main
+        ) { [weak self, weak query] _ in
+            guard let self, let query else { return }
+            query.stop()
+            self.recentsSearchQuery = nil
+
+            if let observer = Self.recentsSearchObserver {
+                NotificationCenter.default.removeObserver(observer)
+                Self.recentsSearchObserver = nil
+            }
+
+            var items: [FileItem] = []
+            let limit = min(query.resultCount, 200)
+            for i in 0..<limit {
+                if let result = query.result(at: i) as? NSMetadataItem,
+                   let path = result.value(forAttribute: NSMetadataItemPathKey) as? String {
+                    let url = URL(fileURLWithPath: path)
+                    if let fileItem = FileItem.create(from: url, iconStyle: self.iconStyle) {
+                        items.append(fileItem)
+                    }
+                }
+            }
+
+            self.browserContainer.activePaneController().displaySearchResults(
+                items,
+                title: "Recents"
+            )
+        }
+
+        self.recentsSearchQuery = query
+        query.start()
     }
 
     // MARK: - Tag Search

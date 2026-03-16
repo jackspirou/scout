@@ -11,10 +11,16 @@ let package = Package(
         .package(url: "https://github.com/smittytone/HighlighterSwift", from: "3.0.0"),
     ],
     targets: [
+        .target(
+            name: "CSearchfs",
+            path: "Sources/CSearchfs",
+            publicHeadersPath: "include"
+        ),
         .executableTarget(
             name: "Scout",
             dependencies: [
                 .product(name: "Highlighter", package: "HighlighterSwift"),
+                "CSearchfs",
             ],
             path: "Sources/Scout",
             exclude: [
@@ -29,6 +35,22 @@ let package = Package(
                 .process("Resources/Assets.xcassets"),
                 .copy("Resources/markdown-template.html"),
             ],
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .target(
+            name: "ScoutDropKit",
+            dependencies: [],
+            path: "Sources/ScoutDropKit",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .testTarget(
+            name: "ScoutDropTests",
+            dependencies: ["ScoutDropKit"],
+            path: "Tests/ScoutDropTests",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]

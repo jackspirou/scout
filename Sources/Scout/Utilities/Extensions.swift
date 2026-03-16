@@ -344,3 +344,51 @@ extension String {
         return score
     }
 }
+
+// MARK: - GlobPattern
+
+/// Converts glob patterns (*, ?) to regular expressions for filename matching.
+enum GlobPattern {
+    /// Returns true if the query contains glob wildcard characters.
+    static func hasWildcards(_ query: String) -> Bool {
+        query.contains("*") || query.contains("?")
+    }
+
+    /// Builds a case-insensitive regex from a glob pattern for filename matching.
+    /// Returns nil if the query has no wildcards (no filtering needed).
+    ///
+    /// Conversion: `*` → `.*`, `?` → `.`, all other regex metacharacters escaped.
+    /// For plain text queries, wraps in `.*query.*` for substring matching.
+    static func buildRegex(from query: String, fullMatch: Bool = true) -> NSRegularExpression? {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+
+        let pattern: String
+        if hasWildcards(trimmed) {
+            var regex = "^"
+            for char in trimmed {
+                switch char {
+                case "*": regex += ".*"
+                case "?": regex += "."
+                case ".", "(", ")", "[", "]", "{", "}", "^", "$", "|", "+", "\\": regex += "\\\(char)"
+                default: regex += String(char)
+                }
+            }
+            regex += "$"
+            pattern = regex
+        } else if fullMatch {
+            let escaped = NSRegularExpression.escapedPattern(for: trimmed)
+            pattern = ".*\(escaped).*"
+        } else {
+            return nil
+        }
+
+        return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+    }
+
+    /// Tests if a filename matches the given regex.
+    static func matches(_ filename: String, regex: NSRegularExpression) -> Bool {
+        let range = NSRange(filename.startIndex..., in: filename)
+        return regex.firstMatch(in: filename, range: range) != nil
+    }
+}

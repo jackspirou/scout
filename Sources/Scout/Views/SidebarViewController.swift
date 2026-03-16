@@ -7,6 +7,9 @@ final class SidebarViewController: NSViewController {
 
     var onNavigate: ((URL) -> Void)?
     var onSearchTag: ((String) -> Void)?
+    var onShowRecents: (() -> Void)?
+    var onAirDrop: (() -> Void)?
+    var onScoutDrop: (([URL], ScoutDropPeer) -> Void)?
 
     private let outlineView = NSOutlineView()
     private let scrollView = NSScrollView()
@@ -90,6 +93,7 @@ final class SidebarViewController: NSViewController {
     func reloadAllSections() {
         sectionItems[.favorites] = loadFavorites()
         sectionItems[.iCloud] = loadICloud()
+        sectionItems[.nearby] = []
         sectionItems[.locations] = loadLocations()
         sectionItems[.tags] = loadTags()
         outlineView.reloadData()
@@ -100,10 +104,54 @@ final class SidebarViewController: NSViewController {
         }
     }
 
+    /// Updates the Nearby section with discovered ScoutDrop peers.
+    func updateNearbyPeers(_ peers: [ScoutDropPeer]) {
+        let icon = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "Mac")
+            ?? NSImage(named: NSImage.computerName)!
+
+        // Check for duplicate names to show disambiguating device ID suffix.
+        let nameCounts = Dictionary(peers.map { ($0.name, 1) }, uniquingKeysWith: +)
+
+        sectionItems[.nearby] = peers.map { peer in
+            var displayName = peer.name
+            if nameCounts[peer.name, default: 0] > 1, let deviceID = peer.deviceID {
+                let suffix = String(deviceID.suffix(4)).uppercased()
+                displayName = "\(peer.name) (\(suffix))"
+            }
+            return SidebarItem(
+                url: URL(fileURLWithPath: "/nearby/\(peer.id.uuidString)"),
+                name: displayName,
+                icon: icon,
+                section: .nearby,
+                peer: peer
+            )
+        }
+        outlineView.reloadItem(SidebarSection.nearby, reloadChildren: true)
+        outlineView.expandItem(SidebarSection.nearby)
+    }
+
     // MARK: - Favorites
+
+    /// Synthetic URLs for special sidebar items that don't represent real directories.
+    private static let airdropURL = URL(fileURLWithPath: "/airdrop")
+    private static let recentsURL = URL(fileURLWithPath: "/recents")
 
     private func builtInFavorites() -> [SidebarItem] {
         let home = FileManager.default.homeDirectoryForCurrentUser
+
+        var items: [SidebarItem] = []
+
+        // AirDrop — always shown at the top, like Finder.
+        let airdropIcon = NSImage(systemSymbolName: "wifi", accessibilityDescription: "AirDrop")
+            ?? NSImage(named: NSImage.networkName)!
+        items.append(SidebarItem(url: Self.airdropURL, name: "AirDrop", icon: airdropIcon, section: .favorites))
+
+        // Recents — Spotlight query for recently used files.
+        let recentsIcon = NSImage(systemSymbolName: "clock", accessibilityDescription: "Recents")
+            ?? NSImage(named: NSImage.quickLookTemplateName)!
+        items.append(SidebarItem(url: Self.recentsURL, name: "Recents", icon: recentsIcon, section: .favorites))
+
+        // Standard directory favorites.
         let entries: [(String, String, URL)] = [
             ("Home", "house", home),
             ("Desktop", "menubar.dock.rectangle", home.appendingPathComponent("Desktop")),
@@ -112,12 +160,14 @@ final class SidebarViewController: NSViewController {
             ("Applications", "app.dashed", URL(fileURLWithPath: "/Applications")),
         ]
 
-        return entries.compactMap { name, symbol, url in
-            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        for (name, symbol, url) in entries {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
             let icon = NSImage(systemSymbolName: symbol, accessibilityDescription: name)
                 ?? NSWorkspace.shared.icon(forFile: url.path)
-            return SidebarItem(url: url, name: name, icon: icon, section: .favorites)
+            items.append(SidebarItem(url: url, name: name, icon: icon, section: .favorites))
         }
+
+        return items
     }
 
     private func loadFavorites() -> [SidebarItem] {
@@ -225,7 +275,11 @@ final class SidebarViewController: NSViewController {
         guard row >= 0 else { return }
         let item = sender.item(atRow: row)
         if let sidebarItem = item as? SidebarItem {
-            if sidebarItem.section == .tags {
+            if sidebarItem.url == Self.airdropURL {
+                onAirDrop?()
+            } else if sidebarItem.url == Self.recentsURL {
+                onShowRecents?()
+            } else if sidebarItem.section == .tags {
                 onSearchTag?(sidebarItem.name)
             } else {
                 onNavigate?(sidebarItem.url)
@@ -290,16 +344,23 @@ extension SidebarViewController: NSOutlineViewDataSource {
         proposedItem item: Any?,
         proposedChildIndex index: Int
     ) -> NSDragOperation {
-        // Only accept drops on the Favorites section
+        guard let urls = info.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !urls.isEmpty else {
+            return []
+        }
+
+        // Accept drops on Favorites section header (add favorite)
         if let section = item as? SidebarSection, section == .favorites {
-            guard let pasteboard = info.draggingPasteboard.readObjects(
-                forClasses: [NSURL.self],
-                options: [.urlReadingFileURLsOnly: true]
-            ) as? [URL], !pasteboard.isEmpty else {
-                return []
-            }
             return .link
         }
+
+        // Accept drops on nearby peer items (send via ScoutDrop)
+        if let sidebarItem = item as? SidebarItem, sidebarItem.peer != nil {
+            return .copy
+        }
+
         return []
     }
 
@@ -318,6 +379,13 @@ extension SidebarViewController: NSOutlineViewDataSource {
             return false
         }
 
+        // Drop on a nearby peer — send files via ScoutDrop
+        if let sidebarItem = item as? SidebarItem, let peer = sidebarItem.peer {
+            onScoutDrop?(urls, peer)
+            return true
+        }
+
+        // Drop on Favorites — add as sidebar favorite
         for url in urls {
             addUserFavorite(url: url)
         }
@@ -393,6 +461,44 @@ extension SidebarViewController: NSOutlineViewDelegate {
                 return tf
             }()
             textField.stringValue = sidebarItem.name
+
+            // Show a status indicator for nearby peers.
+            let statusDotID = "scoutdrop.statusDot"
+            if let peer = sidebarItem.peer {
+                let existingDot = cellView.subviews.first { $0.identifier?.rawValue == statusDotID }
+                let dot = existingDot ?? {
+                    let d = NSView()
+                    d.identifier = NSUserInterfaceItemIdentifier(statusDotID)
+                    d.translatesAutoresizingMaskIntoConstraints = false
+                    d.wantsLayer = true
+                    d.layer?.cornerRadius = 4
+                    cellView.addSubview(d)
+                    NSLayoutConstraint.activate([
+                        d.trailingAnchor.constraint(equalTo: cellView.trailingAnchor, constant: -8),
+                        d.centerYAnchor.constraint(equalTo: cellView.centerYAnchor),
+                        d.widthAnchor.constraint(equalToConstant: 8),
+                        d.heightAnchor.constraint(equalToConstant: 8),
+                    ])
+                    return d
+                }()
+                dot.isHidden = false
+
+                switch peer.state {
+                case .discovered:
+                    dot.layer?.backgroundColor = NSColor.systemGray.cgColor
+                case .connecting:
+                    dot.layer?.backgroundColor = NSColor.systemYellow.cgColor
+                case .connected:
+                    dot.layer?.backgroundColor = NSColor.systemGreen.cgColor
+                case .transferring:
+                    dot.layer?.backgroundColor = NSColor.systemBlue.cgColor
+                case .disconnected:
+                    dot.layer?.backgroundColor = NSColor.systemRed.cgColor
+                }
+            } else {
+                // Hide any leftover status dot from a recycled cell.
+                cellView.subviews.first { $0.identifier?.rawValue == statusDotID }?.isHidden = true
+            }
 
             return cellView
         }

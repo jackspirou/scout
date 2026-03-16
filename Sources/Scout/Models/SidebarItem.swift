@@ -6,6 +6,7 @@ import Cocoa
 enum SidebarSection: String, CaseIterable {
     case favorites = "Favorites"
     case iCloud = "iCloud"
+    case nearby = "Nearby"
     case locations = "Locations"
     case tags = "Tags"
 }
@@ -19,11 +20,13 @@ final class SidebarItem {
     let name: String
     let icon: NSImage
     let section: SidebarSection
+    let peer: ScoutDropPeer?
 
-    init(url: URL, name: String, icon: NSImage, section: SidebarSection) {
+    init(url: URL, name: String, icon: NSImage, section: SidebarSection, peer: ScoutDropPeer? = nil) {
         self.url = url
         self.name = name
         self.icon = icon
         self.section = section
+        self.peer = peer
     }
 }
