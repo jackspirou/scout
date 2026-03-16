@@ -29,7 +29,10 @@ final class FileUndoManager {
         undoManager.registerUndo(withTarget: self) { target in
             Task {
                 do {
-                    try await target.fileSystemService.moveItems(from: resultingURLs, to: sources[0].deletingLastPathComponent())
+                    try await target.fileSystemService.moveItems(
+                        from: resultingURLs,
+                        to: sources[0].deletingLastPathComponent()
+                    )
                 } catch {
                     NSLog("[FileUndoManager] Undo move failed: %@", error.localizedDescription)
                 }
@@ -43,7 +46,7 @@ final class FileUndoManager {
     /// Records a trash operation so that undo restores items from the trash.
     func recordTrash(originalURLs: [URL], trashedURLs: [URL]) {
         let pairs = zip(originalURLs, trashedURLs).map { ($0, $1) }
-        undoManager.registerUndo(withTarget: self) { target in
+        undoManager.registerUndo(withTarget: self) { _ in
             Task {
                 let fm = FileManager.default
                 for (originalURL, trashedURL) in pairs {

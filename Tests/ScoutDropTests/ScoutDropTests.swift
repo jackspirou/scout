@@ -1,15 +1,13 @@
 import CryptoKit
 import Foundation
 import Network
+@testable import ScoutLib
 import Security
 import XCTest
-
-@testable import ScoutLib
 
 // MARK: - ScoutDropFrameHeaderTests
 
 final class ScoutDropFrameHeaderTests: XCTestCase {
-
     /// Decode using the **production** init(UnsafeRawBufferPointer) so round-trip
     /// tests actually exercise both encode and decode paths.
     private func decodeHeader(from data: Data) -> ScoutDropFrameHeader {
@@ -185,7 +183,7 @@ final class ScoutDropFrameHeaderTests: XCTestCase {
     /// Verify the 16 MB frame body size limit used in ScoutDropFramer.handleInput.
     /// This tests the boundary values that the framer checks against.
     func testFrameSizeLimitBoundaryValues() {
-        let maxFrameBodySize = 16_777_216  // 16 MB
+        let maxFrameBodySize = 16_777_216 // 16 MB
 
         // Just under limit — should be accepted.
         var headerUnder = ScoutDropFrameHeader()
@@ -271,7 +269,6 @@ final class ScoutDropFrameHeaderTests: XCTestCase {
 // MARK: - ScoutDropMessageTests
 
 final class ScoutDropMessageTests: XCTestCase {
-
     // MARK: - ScoutDropFileEntry
 
     func testFileEntryRoundTrip() throws {
@@ -503,7 +500,7 @@ final class ScoutDropMessageTests: XCTestCase {
 
     /// Large file list must encode/decode without issues.
     func testOfferMetadataLargeFileList() throws {
-        let files = (0..<1000).map { i in
+        let files = (0 ..< 1000).map { i in
             ScoutDropFileEntry(
                 relativePath: "dir/file_\(i).bin",
                 size: Int64(i * 1024),
@@ -685,14 +682,14 @@ final class ScoutDropMessageTests: XCTestCase {
         var meta = ScoutDropAcceptMetadata(transferID: UUID())
         meta.resumeOffsets = [5: 2048]
         let data = try JSONEncoder().encode(meta)
-        let jsonString = String(data: data, encoding: .utf8)!
+        let jsonString = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(jsonString.contains("\"5\""), "Int dict keys should serialize as strings")
     }
 
     /// Many resume offsets for a large transfer (simulate 1000 files with offsets).
     func testAcceptMetadataManyResumeOffsets() throws {
         var meta = ScoutDropAcceptMetadata(transferID: UUID())
-        for i in 0..<1000 {
+        for i in 0 ..< 1000 {
             meta.resumeOffsets[i] = Int64(i * 512)
         }
         let data = try JSONEncoder().encode(meta)
@@ -737,12 +734,12 @@ final class ScoutDropMessageTests: XCTestCase {
     }
 
     func testControlMetadataLongErrorMessage() throws {
-        let longMsg = String(repeating: "x", count: 10_000)
+        let longMsg = String(repeating: "x", count: 10000)
         var meta = ScoutDropControlMetadata(transferID: UUID())
         meta.errorMessage = longMsg
         let data = try JSONEncoder().encode(meta)
         let decoded = try JSONDecoder().decode(ScoutDropControlMetadata.self, from: data)
-        XCTAssertEqual(decoded.errorMessage?.count, 10_000)
+        XCTAssertEqual(decoded.errorMessage?.count, 10000)
     }
 
     // MARK: - ScoutDropFileErrorMetadata
@@ -781,7 +778,6 @@ final class ScoutDropMessageTests: XCTestCase {
 // MARK: - ScoutDropOfferTests
 
 final class ScoutDropOfferTests: XCTestCase {
-
     func testFileCountExcludesDirectories() {
         let offer = ScoutDropOffer(
             id: UUID(),
@@ -893,7 +889,6 @@ final class ScoutDropOfferTests: XCTestCase {
 // MARK: - ScoutDropPeerTests
 
 final class ScoutDropPeerTests: XCTestCase {
-
     func testPeerProperties() {
         let peer = ScoutDropPeer(
             name: "TestPeer",
@@ -1049,7 +1044,6 @@ final class ScoutDropPeerTests: XCTestCase {
 // MARK: - ScoutDropErrorTests
 
 final class ScoutDropErrorTests: XCTestCase {
-
     func testConnectionFailedDescription() {
         let error = ScoutDropError.connectionFailed("timeout")
         XCTAssertEqual(error.errorDescription, "Connection failed: timeout")
@@ -1088,8 +1082,8 @@ final class ScoutDropErrorTests: XCTestCase {
         )
     }
 
-    func testIdentityKeyMismatchDescription() {
-        let desc = ScoutDropError.identityKeyMismatch("TestDevice").errorDescription!
+    func testIdentityKeyMismatchDescription() throws {
+        let desc = try XCTUnwrap(ScoutDropError.identityKeyMismatch("TestDevice").errorDescription)
         XCTAssertTrue(desc.contains("TestDevice"))
         XCTAssertTrue(desc.contains("Identity changed"))
     }
@@ -1119,13 +1113,13 @@ final class ScoutDropErrorTests: XCTestCase {
         )
     }
 
-    func testIdentityKeyMismatchEmptyName() {
-        let desc = ScoutDropError.identityKeyMismatch("").errorDescription!
+    func testIdentityKeyMismatchEmptyName() throws {
+        let desc = try XCTUnwrap(ScoutDropError.identityKeyMismatch("").errorDescription)
         XCTAssertTrue(desc.contains("Identity changed"))
     }
 
-    func testChecksumMismatchUnicodePath() {
-        let desc = ScoutDropError.checksumMismatch("日本語/ファイル.txt").errorDescription!
+    func testChecksumMismatchUnicodePath() throws {
+        let desc = try XCTUnwrap(ScoutDropError.checksumMismatch("日本語/ファイル.txt").errorDescription)
         XCTAssertTrue(desc.contains("日本語/ファイル.txt"))
     }
 }
@@ -1133,7 +1127,6 @@ final class ScoutDropErrorTests: XCTestCase {
 // MARK: - ScoutDropIdentityTests
 
 final class ScoutDropIdentityTests: XCTestCase {
-
     func testGetOrCreateIdentityReturnsIdentity() throws {
         let identity = try ScoutDropIdentity.getOrCreateIdentity()
         let identity2 = try ScoutDropIdentity.getOrCreateIdentity()
@@ -1215,7 +1208,6 @@ final class ScoutDropIdentityTests: XCTestCase {
 // MARK: - DER Encoding Tests
 
 final class ScoutDropDEREncodingTests: XCTestCase {
-
     // MARK: - derLength
 
     func testDerLengthShortForm() {
@@ -1260,7 +1252,7 @@ final class ScoutDropDEREncodingTests: XCTestCase {
         // 0x01 has high bit clear → no padding needed.
         XCTAssertEqual(
             ScoutDropIdentity.derInteger([0x01]),
-            [0x02, 0x01, 0x01]  // tag=02, length=01, value=01
+            [0x02, 0x01, 0x01] // tag=02, length=01, value=01
         )
     }
 
@@ -1268,7 +1260,7 @@ final class ScoutDropDEREncodingTests: XCTestCase {
         // 0x80 has high bit set → prepend 0x00.
         XCTAssertEqual(
             ScoutDropIdentity.derInteger([0x80]),
-            [0x02, 0x02, 0x00, 0x80]  // tag=02, length=02, value=00 80
+            [0x02, 0x02, 0x00, 0x80] // tag=02, length=02, value=00 80
         )
     }
 
@@ -1283,7 +1275,7 @@ final class ScoutDropDEREncodingTests: XCTestCase {
         // Already starts with 0x00 — should NOT double-pad.
         XCTAssertEqual(
             ScoutDropIdentity.derInteger([0x00, 0x80]),
-            [0x02, 0x02, 0x00, 0x80]  // No extra 0x00 because first byte is already 0x00
+            [0x02, 0x02, 0x00, 0x80] // No extra 0x00 because first byte is already 0x00
         )
     }
 
@@ -1331,9 +1323,9 @@ final class ScoutDropDEREncodingTests: XCTestCase {
     func testDerBitStringMultipleBytes() {
         let bytes: [UInt8] = [0x01, 0x02, 0x03]
         let result = ScoutDropIdentity.derBitString(bytes)
-        XCTAssertEqual(result[0], 0x03)  // tag
-        XCTAssertEqual(result[1], 0x04)  // length (unused_bits + 3 bytes)
-        XCTAssertEqual(result[2], 0x00)  // unused bits
+        XCTAssertEqual(result[0], 0x03) // tag
+        XCTAssertEqual(result[1], 0x04) // length (unused_bits + 3 bytes)
+        XCTAssertEqual(result[2], 0x00) // unused bits
         XCTAssertEqual(Array(result[3...]), bytes)
     }
 
@@ -1354,8 +1346,8 @@ final class ScoutDropDEREncodingTests: XCTestCase {
     func testDerUTF8StringMultibyte() {
         // "é" is 2 bytes in UTF-8: C3 A9
         let result = ScoutDropIdentity.derUTF8String("é")
-        XCTAssertEqual(result[0], 0x0C)  // tag
-        XCTAssertEqual(result[1], 0x02)  // 2 bytes
+        XCTAssertEqual(result[0], 0x0C) // tag
+        XCTAssertEqual(result[1], 0x02) // 2 bytes
         XCTAssertEqual(result[2], 0xC3)
         XCTAssertEqual(result[3], 0xA9)
     }
@@ -1382,7 +1374,7 @@ final class ScoutDropDEREncodingTests: XCTestCase {
         let longStr = String(repeating: "X", count: 200)
         let result = ScoutDropIdentity.derUTF8String(longStr)
         XCTAssertEqual(result[0], 0x0C)
-        XCTAssertEqual(result[1], 0x81)  // long form: 1 extra length byte
+        XCTAssertEqual(result[1], 0x81) // long form: 1 extra length byte
         XCTAssertEqual(result[2], 200)
         XCTAssertEqual(result.count, 3 + 200)
     }
@@ -1403,16 +1395,16 @@ final class ScoutDropDEREncodingTests: XCTestCase {
     }
 
     func testDerOID() {
-        let oid: [UInt8] = [0x55, 0x04, 0x03]  // commonName
+        let oid: [UInt8] = [0x55, 0x04, 0x03] // commonName
         let result = ScoutDropIdentity.derOID(oid)
         XCTAssertEqual(result, [0x06, 0x03, 0x55, 0x04, 0x03])
     }
 
     func testDerExplicitTag0() {
-        let content: [UInt8] = [0x02, 0x01, 0x02]  // INTEGER 2
+        let content: [UInt8] = [0x02, 0x01, 0x02] // INTEGER 2
         let result = ScoutDropIdentity.derExplicitTag(0, content)
-        XCTAssertEqual(result[0], 0xA0)  // context tag 0
-        XCTAssertEqual(result[1], 0x03)  // length
+        XCTAssertEqual(result[0], 0xA0) // context tag 0
+        XCTAssertEqual(result[1], 0x03) // length
         XCTAssertEqual(Array(result[2...]), content)
     }
 
@@ -1423,23 +1415,23 @@ final class ScoutDropDEREncodingTests: XCTestCase {
 
     // MARK: - derGeneralizedTime
 
-    func testDerGeneralizedTimeFormat() {
+    func testDerGeneralizedTimeFormat() throws {
         // 2026-03-15 12:30:45 UTC → "20260315123045Z"
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let components = DateComponents(
             year: 2026, month: 3, day: 15, hour: 12, minute: 30, second: 45
         )
-        let date = calendar.date(from: components)!
+        let date = try XCTUnwrap(calendar.date(from: components))
 
         let result = ScoutDropIdentity.derGeneralizedTime(date)
-        XCTAssertEqual(result[0], 0x18)  // GeneralizedTime tag
+        XCTAssertEqual(result[0], 0x18) // GeneralizedTime tag
         let timeString = String(bytes: result[2...], encoding: .utf8)
         XCTAssertEqual(timeString, "20260315123045Z")
     }
 
     func testDerGeneralizedTimeEpoch() {
-        let epoch = Date(timeIntervalSince1970: 0)  // 1970-01-01 00:00:00 UTC
+        let epoch = Date(timeIntervalSince1970: 0) // 1970-01-01 00:00:00 UTC
         let result = ScoutDropIdentity.derGeneralizedTime(epoch)
         let timeString = String(bytes: result[2...], encoding: .utf8)
         XCTAssertEqual(timeString, "19700101000000Z")
@@ -1456,7 +1448,7 @@ final class ScoutDropDEREncodingTests: XCTestCase {
             let result = ScoutDropIdentity.derGeneralizedTime(date)
             XCTAssertEqual(result[0], 0x18)
             XCTAssertEqual(result[1], 15)
-            XCTAssertEqual(result.count, 17)  // tag + length + 15 bytes
+            XCTAssertEqual(result.count, 17) // tag + length + 15 bytes
         }
     }
 
@@ -1473,9 +1465,9 @@ final class ScoutDropDEREncodingTests: XCTestCase {
         let rdnSequence = ScoutDropIdentity.derSequence(rdn)
 
         // Verify outer structure.
-        XCTAssertEqual(rdnSequence[0], 0x30)  // SEQUENCE tag
+        XCTAssertEqual(rdnSequence[0], 0x30) // SEQUENCE tag
         // Verify inner SET.
-        let innerOffset = 2  // tag + length
+        let innerOffset = 2 // tag + length
         XCTAssertTrue(rdnSequence.count > innerOffset)
     }
 
@@ -1484,7 +1476,7 @@ final class ScoutDropDEREncodingTests: XCTestCase {
         let content = [UInt8](repeating: 0x42, count: 200)
         let result = ScoutDropIdentity.derSequence(content)
         XCTAssertEqual(result[0], 0x30)
-        XCTAssertEqual(result[1], 0x81)  // long form
+        XCTAssertEqual(result[1], 0x81) // long form
         XCTAssertEqual(result[2], 200)
         XCTAssertEqual(result.count, 3 + 200)
     }
@@ -1493,7 +1485,6 @@ final class ScoutDropDEREncodingTests: XCTestCase {
 // MARK: - ScoutDropChecksumTests
 
 final class ScoutDropChecksumTests: XCTestCase {
-
     private var tempDir: URL!
 
     override func setUp() {
@@ -1573,7 +1564,7 @@ final class ScoutDropChecksumTests: XCTestCase {
         XCTAssertEqual(senderChecksum, directHash)
     }
 
-    func testChecksumMismatchOnCorruptedResume() throws {
+    func testChecksumMismatchOnCorruptedResume() {
         let senderContent = Data(repeating: 0xAA, count: 2048)
         let corruptedPrefix = Data(repeating: 0xBB, count: 1024)
         let newBytes = senderContent.suffix(from: 1024)
@@ -1597,7 +1588,7 @@ final class ScoutDropChecksumTests: XCTestCase {
 
     func testLargeFileChecksumChunkedMatchesOneShot() throws {
         let size = 5 * 1024 * 1024
-        let content = Data((0..<size).map { UInt8($0 % 256) })
+        let content = Data((0 ..< size).map { UInt8($0 % 256) })
         let filePath = tempDir.appendingPathComponent("large.bin")
         try content.write(to: filePath)
 
@@ -1708,7 +1699,6 @@ final class ScoutDropChecksumTests: XCTestCase {
 // MARK: - ScoutDropPathTraversalTests
 
 final class ScoutDropPathTraversalTests: XCTestCase {
-
     private var tempDir: URL!
 
     override func setUp() {
@@ -1769,20 +1759,20 @@ final class ScoutDropPathTraversalTests: XCTestCase {
     }
 
     func testDeepNestedPathAccepted() {
-        let deep = (0..<50).map { "dir\($0)" }.joined(separator: "/") + "/file.txt"
+        let deep = (0 ..< 50).map { "dir\($0)" }.joined(separator: "/") + "/file.txt"
         XCTAssertNotNil(validatedPath(relativePath: deep, within: tempDir))
     }
 
-    func testSymlinkTargetTraversalRejected() {
-        let destDir = tempDir!
+    func testSymlinkTargetTraversalRejected() throws {
+        let destDir = try XCTUnwrap(tempDir)
         let linkPath = destDir.appendingPathComponent("mylink")
         let resolvedTarget = linkPath.deletingLastPathComponent()
             .appendingPathComponent("../../etc/passwd").standardizedFileURL
         XCTAssertFalse(resolvedTarget.path.hasPrefix(destDir.standardizedFileURL.path + "/"))
     }
 
-    func testSymlinkTargetWithinDirAccepted() {
-        let destDir = tempDir!
+    func testSymlinkTargetWithinDirAccepted() throws {
+        let destDir = try XCTUnwrap(tempDir)
         let linkPath = destDir.appendingPathComponent("subdir/mylink")
         let resolvedTarget = linkPath.deletingLastPathComponent()
             .appendingPathComponent("../otherfile.txt").standardizedFileURL
@@ -1836,8 +1826,8 @@ final class ScoutDropPathTraversalTests: XCTestCase {
 
     /// Unicode normalization: precomposed vs decomposed filenames.
     func testUnicodeNormalizationInPath() {
-        let precomposed = "caf\u{00E9}"  // é as single codepoint
-        let decomposed = "cafe\u{0301}"  // e + combining accent
+        let precomposed = "caf\u{00E9}" // é as single codepoint
+        let decomposed = "cafe\u{0301}" // e + combining accent
 
         let result1 = validatedPath(relativePath: precomposed + "/file.txt", within: tempDir)
         let result2 = validatedPath(relativePath: decomposed + "/file.txt", within: tempDir)
@@ -1848,7 +1838,7 @@ final class ScoutDropPathTraversalTests: XCTestCase {
 
     /// Extremely long path component that exceeds typical filesystem limits.
     func testVeryLongPathComponent() {
-        let longName = String(repeating: "a", count: 300)  // > NAME_MAX (255)
+        let longName = String(repeating: "a", count: 300) // > NAME_MAX (255)
         let result = validatedPath(relativePath: longName + "/file.txt", within: tempDir)
         // Should still be accepted by validation (filesystem will reject on creation).
         XCTAssertNotNil(result)
@@ -1858,7 +1848,6 @@ final class ScoutDropPathTraversalTests: XCTestCase {
 // MARK: - ScoutDropResumeTests
 
 final class ScoutDropResumeTests: XCTestCase {
-
     private var tempDir: URL!
 
     override func setUp() {
@@ -1884,12 +1873,12 @@ final class ScoutDropResumeTests: XCTestCase {
     }
 
     func testResumeFromPartialFile() throws {
-        let fullContent = Data((0..<2048).map { UInt8($0 % 256) })
+        let fullContent = Data((0 ..< 2048).map { UInt8($0 % 256) })
         let path = tempDir.appendingPathComponent("file.txt.incomplete")
         try fullContent.prefix(1024).write(to: path)
 
         let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
-        XCTAssertEqual(attrs[.size] as! Int64, 1024)
+        XCTAssertEqual(attrs[.size] as? Int64, 1024)
 
         let handle = try FileHandle(forWritingTo: path)
         handle.seekToEndOfFile()
@@ -1903,7 +1892,7 @@ final class ScoutDropResumeTests: XCTestCase {
         try Data(repeating: 0xFF, count: 3000).write(to: path)
 
         let attrs = try FileManager.default.attributesOfItem(atPath: path.path)
-        let existingSize = attrs[.size] as! Int64
+        let existingSize = try XCTUnwrap(attrs[.size] as? Int64)
         XCTAssertGreaterThan(existingSize, 2048)
 
         if existingSize > 2048 {
@@ -1951,7 +1940,7 @@ final class ScoutDropResumeTests: XCTestCase {
     func testMultipleChunkAppend() throws {
         let path = tempDir.appendingPathComponent("multi.bin.incomplete")
         FileManager.default.createFile(atPath: path.path, contents: nil)
-        for i in 0..<4 {
+        for i in 0 ..< 4 {
             let handle = try FileHandle(forWritingTo: path)
             handle.seekToEndOfFile()
             try handle.write(contentsOf: Data(repeating: UInt8(i), count: 512))
@@ -1959,8 +1948,8 @@ final class ScoutDropResumeTests: XCTestCase {
         }
         let result = try Data(contentsOf: path)
         XCTAssertEqual(result.count, 2048)
-        for i in 0..<4 {
-            let slice = result[i * 512..<(i + 1) * 512]
+        for i in 0 ..< 4 {
+            let slice = result[i * 512 ..< (i + 1) * 512]
             XCTAssertTrue(slice.allSatisfy { $0 == UInt8(i) })
         }
     }
@@ -2013,7 +2002,7 @@ final class ScoutDropResumeTests: XCTestCase {
     }
 
     /// Empty .incomplete file (0 bytes) should return offset 0 (not treated as partial).
-    func testResumeOffsetEmptyIncompleteFile() throws {
+    func testResumeOffsetEmptyIncompleteFile() {
         let path = tempDir.appendingPathComponent("empty.incomplete")
         FileManager.default.createFile(atPath: path.path, contents: nil)
         let offset = resumeOffset(for: path, entrySize: 1024)
@@ -2041,7 +2030,6 @@ final class ScoutDropResumeTests: XCTestCase {
 // MARK: - ScoutDropVerificationCodeTests
 
 final class ScoutDropVerificationCodeTests: XCTestCase {
-
     func testDeterministic() {
         let code1 = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "aaa", peerKeyHash: "bbb")
         let code2 = ScoutDropIdentity.deriveVerificationCode(localKeyHash: "aaa", peerKeyHash: "bbb")
@@ -2063,7 +2051,7 @@ final class ScoutDropVerificationCodeTests: XCTestCase {
     func testLeadingZerosPreserved() {
         // Try many inputs to find one that produces leading zeros
         var foundLeadingZero = false
-        for i in 0..<1000 {
+        for i in 0 ..< 1000 {
             let code = ScoutDropIdentity.deriveVerificationCode(
                 localKeyHash: "test\(i)", peerKeyHash: "peer\(i)"
             )

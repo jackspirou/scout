@@ -67,7 +67,9 @@ final class PreviewHeaderView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
 
     // MARK: - Configuration
 
@@ -117,7 +119,12 @@ final class PreviewHeaderView: NSView {
         disclosureButton.imagePosition = .imageOnly
         disclosureButton.symbolConfiguration = .init(pointSize: 10, weight: .medium)
 
-        modeControl = NSSegmentedControl(labels: ["Code", "Preview"], trackingMode: .selectOne, target: self, action: #selector(modeControlChanged))
+        modeControl = NSSegmentedControl(
+            labels: ["Code", "Preview"],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(modeControlChanged)
+        )
         modeControl.translatesAutoresizingMaskIntoConstraints = false
         modeControl.segmentStyle = .rounded
         modeControl.font = NSFont.systemFont(ofSize: 10)
@@ -241,12 +248,21 @@ final class PreviewHeaderView: NSView {
     private func layoutViews() {
         heightConstraint = heightAnchor.constraint(equalToConstant: Layout.collapsedHeight)
 
-        compactDetailLeadingToName = compactDetailLabel.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 8)
+        compactDetailLeadingToName = compactDetailLabel.leadingAnchor.constraint(
+            equalTo: nameLabel.trailingAnchor,
+            constant: 8
+        )
         compactDetailLeadingToName.isActive = true
 
         // Compact detail trailing — to mode control when visible, otherwise to disclosure
-        compactDetailTrailingToMode = compactDetailLabel.trailingAnchor.constraint(lessThanOrEqualTo: modeControl.leadingAnchor, constant: -6)
-        compactDetailTrailingToDisclosure = compactDetailLabel.trailingAnchor.constraint(lessThanOrEqualTo: disclosureButton.leadingAnchor, constant: -4)
+        compactDetailTrailingToMode = compactDetailLabel.trailingAnchor.constraint(
+            lessThanOrEqualTo: modeControl.leadingAnchor,
+            constant: -6
+        )
+        compactDetailTrailingToDisclosure = compactDetailLabel.trailingAnchor.constraint(
+            lessThanOrEqualTo: disclosureButton.leadingAnchor,
+            constant: -4
+        )
         compactDetailTrailingToDisclosure.isActive = true
 
         NSLayoutConstraint.activate([
@@ -292,7 +308,9 @@ final class PreviewHeaderView: NSView {
     // MARK: - Public API
 
     /// Total height including the 1px separator.
-    static var collapsedHeight: CGFloat { Layout.collapsedHeight }
+    static var collapsedHeight: CGFloat {
+        Layout.collapsedHeight
+    }
 
     /// Updates all header fields from the given FileItem.
     func update(with item: FileItem) {
@@ -455,7 +473,9 @@ private final class ClickableView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
 
     override func mouseDown(with event: NSEvent) {
         _ = target?.perform(action)

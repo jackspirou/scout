@@ -37,11 +37,10 @@ enum ScoutDropError: LocalizedError {
 /// and handles the send/receive flow for file transfers using a binary-framed
 /// wire protocol (NWProtocolFramer) over QUIC with per-file stream multiplexing.
 actor ScoutDropService: ScoutDropServiceProtocol {
-
     // MARK: - Constants
 
-    private static let chunkSize = 524_288          // 512KB — QUIC handles segmentation
-    private static let maxConcurrentStreams = 4      // max file streams in flight
+    private static let chunkSize = 524_288 // 512KB — QUIC handles segmentation
+    private static let maxConcurrentStreams = 4 // max file streams in flight
     private static let receiveTimeout: TimeInterval = 30
     private static let serviceType = "_scoutdrop._udp"
     private static let alpn = ["scoutdrop/1"]
@@ -64,7 +63,7 @@ actor ScoutDropService: ScoutDropServiceProtocol {
     // MARK: - Types
 
     /// Result from receiving a single file on a QUIC stream.
-    private struct ReceivedFile: Sendable {
+    private struct ReceivedFile {
         let fileIndex: Int
         let incompletePath: URL
     }
@@ -166,7 +165,9 @@ actor ScoutDropService: ScoutDropServiceProtocol {
     func stopAdvertising() {
         listener?.cancel()
         listener = nil
-        for group in activeGroups { group.cancel() }
+        for group in activeGroups {
+            group.cancel()
+        }
         activeGroups.removeAll()
     }
 
@@ -238,7 +239,8 @@ actor ScoutDropService: ScoutDropServiceProtocol {
 
         // Derive verification code from both peers' public keys (never transmitted).
         if let identity = localIdentity, let peerKeyHash,
-           let localHash = ScoutDropIdentity.publicKeyHash(from: identity) {
+           let localHash = ScoutDropIdentity.publicKeyHash(from: identity)
+        {
             let code = ScoutDropIdentity.deriveVerificationCode(
                 localKeyHash: localHash, peerKeyHash: peerKeyHash
             )
@@ -439,7 +441,8 @@ actor ScoutDropService: ScoutDropServiceProtocol {
             // Derive verification code from both peers' public keys (never transmitted).
             var verificationCode = ""
             if let identity = localIdentity, let peerKeyHash,
-               let localHash = ScoutDropIdentity.publicKeyHash(from: identity) {
+               let localHash = ScoutDropIdentity.publicKeyHash(from: identity)
+            {
                 verificationCode = ScoutDropIdentity.deriveVerificationCode(
                     localKeyHash: localHash, peerKeyHash: peerKeyHash
                 )
@@ -724,7 +727,8 @@ actor ScoutDropService: ScoutDropServiceProtocol {
         for (index, entry) in fileEntries.enumerated() {
             let incompletePath = destDir.appendingPathComponent(entry.relativePath + ".incomplete")
             if let attrs = try? FileManager.default.attributesOfItem(atPath: incompletePath.path),
-               let existingSize = attrs[.size] as? Int64, existingSize > 0 {
+               let existingSize = attrs[.size] as? Int64, existingSize > 0
+            {
                 if existingSize > entry.size {
                     // File is larger than expected — delete and start fresh.
                     try? FileManager.default.removeItem(at: incompletePath)
@@ -769,7 +773,6 @@ actor ScoutDropService: ScoutDropServiceProtocol {
         let receivedFiles: [ReceivedFile] = try await withThrowingTaskGroup(
             of: [ReceivedFile].self
         ) { masterGroup in
-
             // Task 1: receive all file streams.
             masterGroup.addTask { [fileStreamPipe] in
                 var results: [ReceivedFile] = []
@@ -821,7 +824,7 @@ actor ScoutDropService: ScoutDropServiceProtocol {
                         return []
                     }
                     if header.messageType == ScoutDropFrameHeader.typeHeartbeat {
-                        continue  // Keepalive — resets the receive timeout.
+                        continue // Keepalive — resets the receive timeout.
                     }
                     if header.messageType == ScoutDropFrameHeader.typeError {
                         let ctrl = try? JSONDecoder().decode(
@@ -873,7 +876,8 @@ actor ScoutDropService: ScoutDropServiceProtocol {
         // First message: typeFileStart with 2-byte fileIndex metadata + first chunk payload.
         let (header, metaData, payload) = try await receiveMessage(on: stream)
         guard header.messageType == ScoutDropFrameHeader.typeFileStart,
-              metaData.count >= 2 else {
+              metaData.count >= 2
+        else {
             throw ScoutDropError.invalidMessage
         }
 
@@ -982,7 +986,8 @@ actor ScoutDropService: ScoutDropServiceProtocol {
         }
         // Fallback: TXT record.
         if case let .bonjour(txtRecord) = result.metadata,
-           let nickname = txtRecord[txtKeyNickname] {
+           let nickname = txtRecord[txtKeyNickname]
+        {
             return nickname
         }
         return "Unknown Mac"
@@ -1162,7 +1167,7 @@ actor ScoutDropService: ScoutDropServiceProtocol {
     ) async throws {
         var body = Data(count: 2)
         var indexBE = UInt16(fileIndex).bigEndian
-        withUnsafeBytes(of: &indexBE) { body.replaceSubrange(0..<2, with: $0) }
+        withUnsafeBytes(of: &indexBE) { body.replaceSubrange(0 ..< 2, with: $0) }
         body.append(payload)
 
         try await sendFrame(
@@ -1229,7 +1234,10 @@ actor ScoutDropService: ScoutDropServiceProtocol {
                         let metaLen = Int(header.metadataLength)
                         // Slice without copying — callers that need owned Data (e.g. JSON decode)
                         // will copy on access, but large payloads avoid a redundant allocation.
-                        let metadata = content[content.startIndex..<content.index(content.startIndex, offsetBy: metaLen)]
+                        let metadata = content[content.startIndex ..< content.index(
+                            content.startIndex,
+                            offsetBy: metaLen
+                        )]
                         let payload = content[content.index(content.startIndex, offsetBy: metaLen)...]
                         cont.resume(returning: (header, metadata, Data(payload)))
                     }
@@ -1269,7 +1277,7 @@ actor ScoutDropService: ScoutDropServiceProtocol {
                         let relativePath = dirName + "/" + String(childURL.path.dropFirst(url.path.count + 1))
                         let entry = buildSingleEntry(url: childURL, relativePath: relativePath)
                         entries.append(entry)
-                        if !entry.isDirectory && !entry.isSymlink {
+                        if !entry.isDirectory, !entry.isSymlink {
                             basePaths.append((childURL, relativePath))
                         }
                     }

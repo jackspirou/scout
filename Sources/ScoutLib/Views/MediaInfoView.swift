@@ -16,7 +16,7 @@ final class MediaInfoView: NSView {
     private var titleLabel: NSTextField!
     private var summaryLabel: NSTextField!
     private var disclosureButton: NSButton!
-    private var rowStack: NSStackView!  // vertical stack of row views
+    private var rowStack: NSStackView! // vertical stack of row views
     private var separator: NSBox!
     private(set) var heightConstraint: NSLayoutConstraint!
 
@@ -28,16 +28,18 @@ final class MediaInfoView: NSView {
         static let labelWidth: CGFloat = 80
     }
 
-    // Init
+    /// Init
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         configure()
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
 
-    // Configuration - build all subviews
+    /// Configuration - build all subviews
     private func configure() {
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
@@ -109,7 +111,8 @@ final class MediaInfoView: NSView {
 
             summaryLabel.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 8),
             summaryLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: disclosureButton.leadingAnchor, constant: -4),
+                lessThanOrEqualTo: disclosureButton.leadingAnchor, constant: -4
+            ),
             summaryLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
 
             disclosureButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
@@ -171,13 +174,15 @@ final class MediaInfoView: NSView {
                 rowStack.isHidden = false
                 summaryLabel.isHidden = true
                 disclosureButton.image = NSImage(
-                    systemSymbolName: "chevron.up", accessibilityDescription: "Collapse")
+                    systemSymbolName: "chevron.up", accessibilityDescription: "Collapse"
+                )
             } else {
                 heightConstraint.constant = Layout.collapsedHeight
                 rowStack.isHidden = true
                 summaryLabel.isHidden = false
                 disclosureButton.image = NSImage(
-                    systemSymbolName: "chevron.down", accessibilityDescription: "Expand")
+                    systemSymbolName: "chevron.down", accessibilityDescription: "Expand"
+                )
             }
 
         } completionHandler: { [weak self] in
@@ -206,7 +211,7 @@ final class MediaInfoView: NSView {
         valueField.font = NSFont.systemFont(ofSize: 11)
         valueField.textColor = .labelColor
         valueField.lineBreakMode = .byTruncatingTail
-        valueField.isSelectable = true  // Allow copying metadata values
+        valueField.isSelectable = true // Allow copying metadata values
         valueField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         container.addSubview(labelField)
@@ -240,7 +245,9 @@ private final class ClickableAreaView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
 
     override func mouseDown(with event: NSEvent) {
         _ = target?.perform(action)

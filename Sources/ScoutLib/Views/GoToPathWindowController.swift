@@ -37,7 +37,7 @@ final class GoToPathWindowController: NSWindowController {
     }
 
     override init(window: NSWindow?) {
-        self.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         super.init(window: window)
     }
 
@@ -253,7 +253,8 @@ final class GoToPathWindowController: NSWindowController {
                         let lhsIsDir = (try? lhs.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
                         let rhsIsDir = (try? rhs.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
                         if lhsIsDir != rhsIsDir { return lhsIsDir }
-                        return lhs.lastPathComponent.localizedStandardCompare(rhs.lastPathComponent) == .orderedAscending
+                        return lhs.lastPathComponent
+                            .localizedStandardCompare(rhs.lastPathComponent) == .orderedAscending
                     }
             }
         } catch {

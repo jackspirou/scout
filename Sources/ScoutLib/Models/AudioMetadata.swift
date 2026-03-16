@@ -3,10 +3,10 @@ import Foundation
 /// Metadata extracted from an audio file via AVAsset and its ID3 / common metadata tags.
 struct AudioMetadata {
     // Technical audio properties
-    let duration: TimeInterval   // seconds
+    let duration: TimeInterval // seconds
     let audioCodec: String?
-    let audioBitrate: Double?    // bits per second
-    let sampleRate: Double?      // Hz
+    let audioBitrate: Double? // bits per second
+    let sampleRate: Double? // Hz
     let channelCount: Int?
 
     // ID3 / common metadata (all optional)
@@ -17,14 +17,16 @@ struct AudioMetadata {
     let genre: String?
     let releaseYear: String?
     let composer: String?
-    let albumArt: Data?          // raw image data
+    let albumArt: Data? // raw image data
     let bpm: Int?
     let copyright: String?
 
     // Computed helpers
 
     /// Duration formatted as "H:MM:SS" or "M:SS".
-    var formattedDuration: String { duration.formattedDuration }
+    var formattedDuration: String {
+        duration.formattedDuration
+    }
 
     /// Channels as "Mono", "Stereo", "5.1 Surround", "7.1 Surround", or "N channels".
     var formattedChannels: String? {
@@ -61,8 +63,8 @@ struct AudioMetadata {
     /// Whether any ID3-style tag metadata is present.
     var hasTagMetadata: Bool {
         artist != nil || albumName != nil || trackTitle != nil ||
-        trackNumber != nil || genre != nil || releaseYear != nil ||
-        composer != nil || albumArt != nil || bpm != nil ||
-        copyright != nil
+            trackNumber != nil || genre != nil || releaseYear != nil ||
+            composer != nil || albumArt != nil || bpm != nil ||
+            copyright != nil
     }
 }

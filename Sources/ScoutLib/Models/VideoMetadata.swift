@@ -7,28 +7,34 @@ struct VideoMetadata {
     let height: Int?
     let frameRate: Double?
     let videoCodec: String?
-    let videoBitrate: Double?    // bits per second
+    let videoBitrate: Double? // bits per second
 
     // Audio track (nil for silent video)
     let audioCodec: String?
-    let audioBitrate: Double?    // bits per second
-    let sampleRate: Double?      // Hz
+    let audioBitrate: Double? // bits per second
+    let sampleRate: Double? // Hz
     let channelCount: Int?
 
     // Container
-    let duration: TimeInterval   // seconds
-    let totalBitrate: Double?    // bits per second
+    let duration: TimeInterval // seconds
+    let totalBitrate: Double? // bits per second
 
     // Computed helpers
 
     /// Whether the file has a video track.
-    var hasVideo: Bool { width != nil && height != nil }
+    var hasVideo: Bool {
+        width != nil && height != nil
+    }
 
     /// Whether the file has an audio track.
-    var hasAudio: Bool { audioCodec != nil }
+    var hasAudio: Bool {
+        audioCodec != nil
+    }
 
     /// Duration formatted as "H:MM:SS" or "M:SS".
-    var formattedDuration: String { duration.formattedDuration }
+    var formattedDuration: String {
+        duration.formattedDuration
+    }
 
     /// Resolution as "1920 x 1080".
     var formattedResolution: String? {

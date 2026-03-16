@@ -126,7 +126,7 @@ extension Int {
 extension TimeInterval {
     /// Formats a duration as "H:MM:SS" or "M:SS".
     var formattedDuration: String {
-        let total = max(0, Int(self.rounded()))
+        let total = max(0, Int(rounded()))
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         let seconds = total % 60

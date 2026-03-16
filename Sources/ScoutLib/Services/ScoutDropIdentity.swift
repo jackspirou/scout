@@ -22,8 +22,7 @@ enum ScoutDropIdentityError: LocalizedError {
 
 // MARK: - ScoutDropIdentity
 
-enum ScoutDropIdentity: Sendable {
-
+enum ScoutDropIdentity {
     // MARK: - Constants
 
     private static let applicationTag = "com.scout.scoutdrop.identity"

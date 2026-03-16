@@ -48,8 +48,8 @@ enum GroupBy: String, Codable, CaseIterable {
 
 /// Controls whether file icons are native macOS icons or flat SF Symbols.
 enum IconStyle: String, CaseIterable {
-    case system  // Native macOS icons (default)
-    case flat    // SF Symbol icons
+    case system // Native macOS icons (default)
+    case flat // SF Symbol icons
 }
 
 // MARK: - ViewSettings

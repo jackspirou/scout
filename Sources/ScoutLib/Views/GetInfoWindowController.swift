@@ -298,7 +298,7 @@ private final class GetInfoViewController: NSViewController {
         do {
             try FileManager.default.moveItem(at: url, to: newURL)
             // Update stored URL after successful rename
-            self.url = newURL
+            url = newURL
             // Update permissions editor URL
             permissionsEditorVC?.updateURL(newURL)
             // Update window title

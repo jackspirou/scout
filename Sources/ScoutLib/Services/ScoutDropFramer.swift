@@ -11,8 +11,14 @@ final class ScoutDropFramer: NWProtocolFramerImplementation {
 
     init(framer: NWProtocolFramer.Instance) {}
 
-    func start(framer: NWProtocolFramer.Instance) -> NWProtocolFramer.StartResult { .ready }
-    func stop(framer: NWProtocolFramer.Instance) -> Bool { true }
+    func start(framer: NWProtocolFramer.Instance) -> NWProtocolFramer.StartResult {
+        .ready
+    }
+
+    func stop(framer: NWProtocolFramer.Instance) -> Bool {
+        true
+    }
+
     func wakeup(framer: NWProtocolFramer.Instance) {}
     func cleanup(framer: NWProtocolFramer.Instance) {}
 
@@ -36,7 +42,7 @@ final class ScoutDropFramer: NWProtocolFramerImplementation {
             let totalBodyLength = Int(tempHeader.metadataLength) + Int(tempHeader.payloadLength)
 
             // Reject unreasonably large frames to prevent memory exhaustion.
-            let maxFrameBodySize = 16_777_216  // 16 MB
+            let maxFrameBodySize = 16_777_216 // 16 MB
             guard totalBodyLength <= maxFrameBodySize else {
                 return 0
             }
@@ -100,8 +106,8 @@ struct ScoutDropFrameHeader {
         data[0] = messageType
         var metaBE = metadataLength.bigEndian
         var payBE = payloadLength.bigEndian
-        data.replaceSubrange(1..<5, with: Data(bytes: &metaBE, count: 4))
-        data.replaceSubrange(5..<9, with: Data(bytes: &payBE, count: 4))
+        data.replaceSubrange(1 ..< 5, with: Data(bytes: &metaBE, count: 4))
+        data.replaceSubrange(5 ..< 9, with: Data(bytes: &payBE, count: 4))
         return data
     }
 }
@@ -117,13 +123,13 @@ extension ScoutDropFrameHeader {
     static let typeError: UInt8 = 0x07
 
     // File stream message types (compact binary, no JSON).
-    static let typeFileStart: UInt8 = 0x08  // 2-byte metadata (fileIndex UInt16 BE) + payload
-    static let typeFileData: UInt8 = 0x09   // 0-byte metadata, raw payload
-    static let typeFileEnd: UInt8 = 0x0A    // SHA-256 hex metadata, final payload (may be empty)
+    static let typeFileStart: UInt8 = 0x08 // 2-byte metadata (fileIndex UInt16 BE) + payload
+    static let typeFileData: UInt8 = 0x09 // 0-byte metadata, raw payload
+    static let typeFileEnd: UInt8 = 0x0A // SHA-256 hex metadata, final payload (may be empty)
 
     // Extended control message types.
-    static let typeFileError: UInt8 = 0x0B  // Per-file error: JSON metadata with fileIndex + error
-    static let typeHeartbeat: UInt8 = 0x0C  // Keepalive: 0-byte metadata, 0-byte payload
+    static let typeFileError: UInt8 = 0x0B // Per-file error: JSON metadata with fileIndex + error
+    static let typeHeartbeat: UInt8 = 0x0C // Keepalive: 0-byte metadata, 0-byte payload
 }
 
 // MARK: - NWProtocolFramer.Message Extension

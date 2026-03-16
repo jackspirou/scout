@@ -36,7 +36,7 @@ actor SearchfsService: SearchfsServiceProtocol {
 
     func searchNonIndexedVolumes(
         query: String,
-        maxResults: UInt32 = 10_000
+        maxResults: UInt32 = 10000
     ) -> AsyncStream<[FileItem]> {
         cancelActiveSearch()
 
@@ -78,7 +78,7 @@ actor SearchfsService: SearchfsServiceProtocol {
     func search(
         query: String,
         volumePath: String,
-        maxResults: UInt32 = 10_000
+        maxResults: UInt32 = 10000
     ) -> AsyncStream<[FileItem]> {
         cancelActiveSearch()
 
@@ -234,8 +234,8 @@ actor SearchfsService: SearchfsServiceProtocol {
                 volumePath,
                 pattern,
                 maxResults,
-                true,   // matchFiles
-                true,   // matchDirs
+                true, // matchFiles
+                true, // matchDirs
                 { (path: UnsafePointer<CChar>?, context: UnsafeMutableRawPointer?) -> Bool in
                     guard let context, let path else { return false }
                     if Task.isCancelled { return false }

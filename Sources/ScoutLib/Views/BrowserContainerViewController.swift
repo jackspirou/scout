@@ -33,12 +33,24 @@ final class BrowserContainerViewController: NSViewController {
 
     // MARK: - Init
 
-    init(clipboardManager: ClipboardManager = ClipboardManager(), iconStyle: IconStyle = .system, showHiddenFiles: Bool = true) {
+    init(
+        clipboardManager: ClipboardManager = ClipboardManager(),
+        iconStyle: IconStyle = .system,
+        showHiddenFiles: Bool = true
+    ) {
         self.clipboardManager = clipboardManager
         self.iconStyle = iconStyle
         self.showHiddenFiles = showHiddenFiles
-        leftPane = BrowserPaneViewController(clipboardManager: clipboardManager, iconStyle: iconStyle, showHiddenFiles: showHiddenFiles)
-        rightPane = BrowserPaneViewController(clipboardManager: clipboardManager, iconStyle: iconStyle, showHiddenFiles: showHiddenFiles)
+        leftPane = BrowserPaneViewController(
+            clipboardManager: clipboardManager,
+            iconStyle: iconStyle,
+            showHiddenFiles: showHiddenFiles
+        )
+        rightPane = BrowserPaneViewController(
+            clipboardManager: clipboardManager,
+            iconStyle: iconStyle,
+            showHiddenFiles: showHiddenFiles
+        )
         super.init(nibName: nil, bundle: nil)
     }
 

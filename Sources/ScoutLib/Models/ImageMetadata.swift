@@ -7,7 +7,7 @@ struct ImageMetadata {
     let pixelHeight: Int
     let dpiX: Double?
     let dpiY: Double?
-    let colorSpace: String?       // e.g. "sRGB", "Display P3"
+    let colorSpace: String? // e.g. "sRGB", "Display P3"
     let bitDepth: Int?
     let hasAlpha: Bool?
     let profileName: String?
@@ -16,9 +16,9 @@ struct ImageMetadata {
     let cameraMake: String?
     let cameraModel: String?
     let lensModel: String?
-    let focalLength: Double?      // mm
-    let aperture: Double?         // f-number
-    let shutterSpeed: String?     // formatted string like "1/120"
+    let focalLength: Double? // mm
+    let aperture: Double? // f-number
+    let shutterSpeed: String? // formatted string like "1/120"
     let iso: Int?
     let flash: Bool?
     let dateTaken: Date?
@@ -46,8 +46,8 @@ struct ImageMetadata {
     /// Whether this image has any EXIF camera data worth showing.
     var hasExifData: Bool {
         cameraMake != nil || cameraModel != nil || lensModel != nil ||
-        focalLength != nil || aperture != nil || shutterSpeed != nil ||
-        iso != nil || dateTaken != nil
+            focalLength != nil || aperture != nil || shutterSpeed != nil ||
+            iso != nil || dateTaken != nil
     }
 
     /// Whether this image has GPS coordinates.

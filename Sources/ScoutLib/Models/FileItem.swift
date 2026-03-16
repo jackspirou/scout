@@ -239,7 +239,12 @@ struct FileItem: Identifiable, Hashable {
             let exists = fileManager.fileExists(atPath: url.path, isDirectory: &isDir)
             guard exists else { return nil }
 
-            let resolved = FileTypeResolver.resolve(url: url, isDirectory: isDir.boolValue, systemKind: nil, iconStyle: iconStyle)
+            let resolved = FileTypeResolver.resolve(
+                url: url,
+                isDirectory: isDir.boolValue,
+                systemKind: nil,
+                iconStyle: iconStyle
+            )
             return FileItem(
                 url: url,
                 name: name,
@@ -259,7 +264,12 @@ struct FileItem: Identifiable, Hashable {
         let size: Int64? = isDirectory ? nil : Int64(resourceValues.totalFileSize ?? resourceValues.fileSize ?? 0)
         let isLocked = resourceValues.isUserImmutable ?? false
 
-        let resolved = FileTypeResolver.resolve(url: url, isDirectory: isDirectory, systemKind: resourceValues.localizedTypeDescription, iconStyle: iconStyle)
+        let resolved = FileTypeResolver.resolve(
+            url: url,
+            isDirectory: isDirectory,
+            systemKind: resourceValues.localizedTypeDescription,
+            iconStyle: iconStyle
+        )
         return FileItem(
             url: url,
             name: resourceValues.name ?? url.lastPathComponent,

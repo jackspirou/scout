@@ -17,7 +17,6 @@ import AppKit
 /// - ER relationship operators
 /// - Class diagram visibility markers
 enum MermaidHighlighter {
-
     // MARK: - Public API
 
     /// Returns a syntax-highlighted NSAttributedString for the given mermaid source.
@@ -95,22 +94,22 @@ enum MermaidHighlighter {
 
         init(isDark: Bool) {
             if isDark {
-                keyword  = NSColor(red: 0.55, green: 0.50, blue: 0.95, alpha: 1)
-                arrow    = NSColor(red: 0.60, green: 0.75, blue: 0.95, alpha: 1)
-                string   = NSColor(red: 0.60, green: 0.85, blue: 0.55, alpha: 1)
-                comment  = NSColor(red: 0.55, green: 0.55, blue: 0.60, alpha: 1)
+                keyword = NSColor(red: 0.55, green: 0.50, blue: 0.95, alpha: 1)
+                arrow = NSColor(red: 0.60, green: 0.75, blue: 0.95, alpha: 1)
+                string = NSColor(red: 0.60, green: 0.85, blue: 0.55, alpha: 1)
+                comment = NSColor(red: 0.55, green: 0.55, blue: 0.60, alpha: 1)
                 constant = NSColor(red: 0.85, green: 0.55, blue: 0.40, alpha: 1)
-                bracket  = NSColor(red: 0.80, green: 0.70, blue: 0.35, alpha: 1)
-                number   = NSColor(red: 0.85, green: 0.65, blue: 0.45, alpha: 1)
+                bracket = NSColor(red: 0.80, green: 0.70, blue: 0.35, alpha: 1)
+                number = NSColor(red: 0.85, green: 0.65, blue: 0.45, alpha: 1)
                 property = NSColor(red: 0.75, green: 0.60, blue: 0.85, alpha: 1)
             } else {
-                keyword  = NSColor(red: 0.40, green: 0.20, blue: 0.80, alpha: 1)
-                arrow    = NSColor(red: 0.15, green: 0.40, blue: 0.75, alpha: 1)
-                string   = NSColor(red: 0.20, green: 0.55, blue: 0.15, alpha: 1)
-                comment  = NSColor(red: 0.45, green: 0.45, blue: 0.50, alpha: 1)
+                keyword = NSColor(red: 0.40, green: 0.20, blue: 0.80, alpha: 1)
+                arrow = NSColor(red: 0.15, green: 0.40, blue: 0.75, alpha: 1)
+                string = NSColor(red: 0.20, green: 0.55, blue: 0.15, alpha: 1)
+                comment = NSColor(red: 0.45, green: 0.45, blue: 0.50, alpha: 1)
                 constant = NSColor(red: 0.70, green: 0.30, blue: 0.10, alpha: 1)
-                bracket  = NSColor(red: 0.60, green: 0.45, blue: 0.10, alpha: 1)
-                number   = NSColor(red: 0.70, green: 0.40, blue: 0.10, alpha: 1)
+                bracket = NSColor(red: 0.60, green: 0.45, blue: 0.10, alpha: 1)
+                number = NSColor(red: 0.70, green: 0.40, blue: 0.10, alpha: 1)
                 property = NSColor(red: 0.55, green: 0.35, blue: 0.65, alpha: 1)
             }
         }
@@ -123,7 +122,7 @@ enum MermaidHighlighter {
         // Comments: %% to end of line
         static let comments = regex("%%.*$")
 
-        // Diagram type declarations (at start of line)
+        /// Diagram type declarations (at start of line)
         static let diagramTypes: NSRegularExpression = {
             let types = [
                 "graph", "flowchart", "sequenceDiagram", "classDiagram",
@@ -137,7 +136,7 @@ enum MermaidHighlighter {
             return regex("^\\s*(" + types.joined(separator: "|") + ")\\b")
         }()
 
-        // Structural/control keywords
+        /// Structural/control keywords
         static let controlKeywords: NSRegularExpression = {
             let words = [
                 "subgraph", "end", "direction", "participant", "actor",
@@ -153,10 +152,10 @@ enum MermaidHighlighter {
             return regex("\\b(" + words.joined(separator: "|") + ")\\b")
         }()
 
-        // Direction values
+        /// Direction values
         static let directions = regex("\\b(TB|TD|BT|RL|LR)\\b")
 
-        // Gantt/git/state constants
+        /// Gantt/git/state constants
         static let constants = regex("\\b(crit|done|active|after|NORMAL|REVERSE|HIGHLIGHT)\\b")
 
         // Arrows and edge connectors — ordered longest-first to avoid partial matches.
@@ -164,40 +163,40 @@ enum MermaidHighlighter {
         // and multi-dash variants (---, -----, ===, etc.)
         static let arrows = regex(
             [
-                "[xo<]?-{1,5}\\.{1,4}-{1,5}[xo>]?",  // dotted: -.-, -..-, -..->, <-.->
-                "[xo<]?={2,5}[xo>]?",                   // thick: ==, ===, ==>, <==>
-                "[xo<]?-{2,5}[xo>]?",                   // solid: --, ---, -->, <-->
-                "-->",                                    // common arrow (ensure match)
+                "[xo<]?-{1,5}\\.{1,4}-{1,5}[xo>]?", // dotted: -.-, -..-, -..->, <-.->
+                "[xo<]?={2,5}[xo>]?", // thick: ==, ===, ==>, <==>
+                "[xo<]?-{2,5}[xo>]?", // solid: --, ---, -->, <-->
+                "-->", // common arrow (ensure match)
             ].joined(separator: "|")
         )
 
-        // ER relationship operators: ||--o{, }|..|{, |o--||, etc.
+        /// ER relationship operators: ||--o{, }|..|{, |o--||, etc.
         static let erRelationships = regex(
             "(?:[|}][|o])(?:\\.{2}|-{2})(?:[o|][{|])"
         )
 
-        // Quoted strings: "..."
+        /// Quoted strings: "..."
         static let quotedStrings = regex("\"[^\"]*\"")
 
-        // Pipe-delimited edge labels: |text|
+        /// Pipe-delimited edge labels: |text|
         static let pipeLabels = regex("\\|[^|\\n]+\\|")
 
-        // Node labels inside shape delimiters.
-        // Matches text inside: [text], (text), {text}, ((text)), [[text]], [(text)]
-        // Uses lookbehind for opening delimiter and lookahead for closing.
+        /// Node labels inside shape delimiters.
+        /// Matches text inside: [text], (text), {text}, ((text)), [[text]], [(text)]
+        /// Uses lookbehind for opening delimiter and lookahead for closing.
         static let nodeLabels = regex(
-            "(?<=\\[\\[|\\[\\(|\\(\\[|\\(\\(|[\\[\\(\\{>])" +     // opening delimiter
-            "([^\\]\\)\\}\\n]+?)" +                                  // label content
-            "(?=\\]\\]|\\)\\]|\\]\\)|\\)\\)|[\\]\\)\\}])"           // closing delimiter
+            "(?<=\\[\\[|\\[\\(|\\(\\[|\\(\\(|[\\[\\(\\{>])" + // opening delimiter
+                "([^\\]\\)\\}\\n]+?)" + // label content
+                "(?=\\]\\]|\\)\\]|\\]\\)|\\)\\)|[\\]\\)\\}])" // closing delimiter
         )
 
-        // Node shape delimiters: ([, ]), ((, )), [[, ]], [(, )]
-        // Also single: [, ], (, ), {, }, >
+        /// Node shape delimiters: ([, ]), ((, )), [[, ]], [(, )]
+        /// Also single: [, ], (, ), {, }, >
         static let shapeDelimiters = regex(
             "\\(\\[|\\]\\)|\\(\\(|\\)\\)|\\[\\[|\\]\\]|\\[\\(|\\)\\]|[\\[\\]\\(\\)\\{\\}>]"
         )
 
-        // Numeric literals (integers and decimals)
+        /// Numeric literals (integers and decimals)
         static let numbers = regex("(?<![\\w#])[-+]?\\d+\\.?\\d*(?![\\w])")
 
         // Style/classDef property values after style/classDef keyword
@@ -207,9 +206,9 @@ enum MermaidHighlighter {
             "\\b(?:style|classDef)\\s+\\S+\\s+([-,:;#\\w%.]+)"
         )
 
-        // Class diagram visibility markers at start of member lines
-        // Uses fixed-width lookbehind (exactly 4 spaces) since ICU
-        // doesn't support variable-length lookbehinds.
+        /// Class diagram visibility markers at start of member lines
+        /// Uses fixed-width lookbehind (exactly 4 spaces) since ICU
+        /// doesn't support variable-length lookbehinds.
         static let visibilityMarkers = regex("^\\s+[+\\-#~](?=\\w)")
 
         // MARK: - Helpers

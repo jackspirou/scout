@@ -155,13 +155,13 @@ final class DocumentPreviewViewController: NSViewController, PreviewChild {
                 self.loadingSpinner.stopAnimation(nil)
 
                 switch result {
-                case .success(let attrString):
+                case let .success(attrString):
                     let fixedString = Self.fixInvisibleTextColors(in: attrString)
                     self.textView.textStorage?.setAttributedString(fixedString)
                     self.scrollView.isHidden = false
                     self.errorLabel.isHidden = true
                     self.headerView.setCompactDetail(size)
-                case .failure(let error):
+                case let .failure(error):
                     self.scrollView.isHidden = true
                     self.errorLabel.stringValue = "Unable to read document: \(error.localizedDescription)"
                     self.errorLabel.isHidden = false

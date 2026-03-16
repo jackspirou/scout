@@ -6,7 +6,6 @@ import ImageIO
 
 /// Extracts media metadata from image and video/audio files.
 enum MediaMetadataExtractor {
-
     /// Extracts image metadata from the given URL using CGImageSource.
     /// Runs the extraction off the main thread. Returns nil if the file
     /// cannot be read or is not a valid image.
@@ -15,7 +14,8 @@ enum MediaMetadataExtractor {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                   CGImageSourceGetCount(source) > 0 else { return nil }
 
-            guard let rawProps = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else { return nil }
+            guard let rawProps = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+            else { return nil }
 
             let exif = rawProps[kCGImagePropertyExifDictionary as String] as? [String: Any]
             let tiff = rawProps[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
@@ -32,11 +32,14 @@ enum MediaMetadataExtractor {
             let colorSpace = rawProps[kCGImagePropertyColorModel as String] as? String
 
             // TIFF properties (camera make/model often lives here)
-            let cameraMake = (tiff?[kCGImagePropertyTIFFMake as String] as? String)?.trimmingCharacters(in: .whitespaces)
-            let cameraModel = (tiff?[kCGImagePropertyTIFFModel as String] as? String)?.trimmingCharacters(in: .whitespaces)
+            let cameraMake = (tiff?[kCGImagePropertyTIFFMake as String] as? String)?
+                .trimmingCharacters(in: .whitespaces)
+            let cameraModel = (tiff?[kCGImagePropertyTIFFModel as String] as? String)?
+                .trimmingCharacters(in: .whitespaces)
 
             // EXIF properties
-            let lensModel = (exif?[kCGImagePropertyExifLensModel as String] as? String)?.trimmingCharacters(in: .whitespaces)
+            let lensModel = (exif?[kCGImagePropertyExifLensModel as String] as? String)?
+                .trimmingCharacters(in: .whitespaces)
             let focalLength = exif?[kCGImagePropertyExifFocalLength as String] as? Double
             let aperture = exif?[kCGImagePropertyExifFNumber as String] as? Double
             let iso = (exif?[kCGImagePropertyExifISOSpeedRatings as String] as? [Int])?.first
@@ -60,7 +63,8 @@ enum MediaMetadataExtractor {
 
             // Date taken
             let dateTaken: Date? = {
-                guard let dateString = exif?[kCGImagePropertyExifDateTimeOriginal as String] as? String else { return nil }
+                guard let dateString = exif?[kCGImagePropertyExifDateTimeOriginal as String] as? String
+                else { return nil }
                 let formatter = DateFormatter()
                 formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
                 formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -132,8 +136,8 @@ enum MediaMetadataExtractor {
                 width = Int(abs(transformedSize.width))
                 height = Int(abs(transformedSize.height))
 
-                frameRate = Double(try await videoTrack.load(.nominalFrameRate))
-                videoBitrate = Double(try await videoTrack.load(.estimatedDataRate))
+                frameRate = try Double(await videoTrack.load(.nominalFrameRate))
+                videoBitrate = try Double(await videoTrack.load(.estimatedDataRate))
 
                 let formatDescriptions = try await videoTrack.load(.formatDescriptions)
                 if let desc = formatDescriptions.first {
@@ -278,7 +282,7 @@ enum MediaMetadataExtractor {
         var info = AudioTrackInfo()
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         if let audioTrack = audioTracks.first {
-            info.bitrate = Double(try await audioTrack.load(.estimatedDataRate))
+            info.bitrate = try Double(await audioTrack.load(.estimatedDataRate))
 
             let formatDescriptions = try await audioTrack.load(.formatDescriptions)
             if let desc = formatDescriptions.first {
@@ -319,26 +323,26 @@ enum MediaMetadataExtractor {
     private static func codecName(from fourCC: FourCharCode) -> String {
         switch fourCC {
         // Video
-        case kCMVideoCodecType_H264:            return "H.264"
-        case kCMVideoCodecType_HEVC:            return "HEVC (H.265)"
-        case kCMVideoCodecType_VP9:             return "VP9"
-        case kCMVideoCodecType_AV1:             return "AV1"
-        case kCMVideoCodecType_MPEG4Video:      return "MPEG-4"
-        case kCMVideoCodecType_MPEG2Video:      return "MPEG-2"
-        case kCMVideoCodecType_AppleProRes4444:  return "ProRes 4444"
-        case kCMVideoCodecType_AppleProRes422:   return "ProRes 422"
+        case kCMVideoCodecType_H264: return "H.264"
+        case kCMVideoCodecType_HEVC: return "HEVC (H.265)"
+        case kCMVideoCodecType_VP9: return "VP9"
+        case kCMVideoCodecType_AV1: return "AV1"
+        case kCMVideoCodecType_MPEG4Video: return "MPEG-4"
+        case kCMVideoCodecType_MPEG2Video: return "MPEG-2"
+        case kCMVideoCodecType_AppleProRes4444: return "ProRes 4444"
+        case kCMVideoCodecType_AppleProRes422: return "ProRes 422"
         case kCMVideoCodecType_AppleProRes422HQ: return "ProRes 422 HQ"
         case kCMVideoCodecType_AppleProRes422LT: return "ProRes 422 LT"
         case kCMVideoCodecType_AppleProRes422Proxy: return "ProRes 422 Proxy"
         // Audio
-        case kAudioFormatMPEG4AAC:              return "AAC"
-        case kAudioFormatMPEGLayer3:            return "MP3"
-        case kAudioFormatAppleLossless:         return "Apple Lossless"
-        case kAudioFormatLinearPCM:             return "PCM"
-        case kAudioFormatFLAC:                  return "FLAC"
-        case kAudioFormatOpus:                  return "Opus"
-        case kAudioFormatAC3:                   return "AC-3"
-        case kAudioFormatEnhancedAC3:           return "E-AC-3"
+        case kAudioFormatMPEG4AAC: return "AAC"
+        case kAudioFormatMPEGLayer3: return "MP3"
+        case kAudioFormatAppleLossless: return "Apple Lossless"
+        case kAudioFormatLinearPCM: return "PCM"
+        case kAudioFormatFLAC: return "FLAC"
+        case kAudioFormatOpus: return "Opus"
+        case kAudioFormatAC3: return "AC-3"
+        case kAudioFormatEnhancedAC3: return "E-AC-3"
         default:
             // Fall back to FourCC string representation
             let chars = [

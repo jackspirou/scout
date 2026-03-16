@@ -130,7 +130,8 @@ final class PDFPreviewViewController: NSViewController, PreviewChild {
 
         if let attrs = document.documentAttributes,
            let author = attrs[PDFDocumentAttribute.authorAttribute] as? String,
-           !author.isEmpty {
+           !author.isEmpty
+        {
             parts.append(author)
         }
 

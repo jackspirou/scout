@@ -11,7 +11,6 @@ import AppKit
 /// Auto-detects the delimiter from the first line when not explicitly provided.
 /// Supported delimiters: comma, semicolon, tab, pipe.
 enum CSVHighlighter {
-
     // MARK: - Public API
 
     /// Returns a syntax-highlighted NSAttributedString for the given CSV/TSV source.
@@ -20,7 +19,9 @@ enum CSVHighlighter {
     ///   - delimiter: The field delimiter character. Pass `nil` to auto-detect.
     ///   - fontSize: The font size to use.
     ///   - isDark: Whether to use dark mode colors.
-    static func highlight(_ text: String, delimiter: Character? = nil, fontSize: CGFloat, isDark: Bool) -> NSAttributedString {
+    static func highlight(_ text: String, delimiter: Character? = nil, fontSize: CGFloat,
+                          isDark: Bool) -> NSAttributedString
+    {
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         let boldFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
         let colors = Colors(isDark: isDark)
@@ -109,28 +110,28 @@ enum CSVHighlighter {
 
         init(isDark: Bool) {
             if isDark {
-                header    = NSColor(red: 0.55, green: 0.70, blue: 0.95, alpha: 1)
+                header = NSColor(red: 0.55, green: 0.70, blue: 0.95, alpha: 1)
                 delimiter = NSColor(red: 0.45, green: 0.45, blue: 0.50, alpha: 1)
-                quoted    = NSColor(red: 0.60, green: 0.85, blue: 0.55, alpha: 1)
-                columns   = [
-                    NSColor(red: 0.85, green: 0.75, blue: 0.55, alpha: 1),  // warm yellow
-                    NSColor(red: 0.65, green: 0.80, blue: 0.90, alpha: 1),  // light blue
-                    NSColor(red: 0.80, green: 0.65, blue: 0.80, alpha: 1),  // lavender
-                    NSColor(red: 0.70, green: 0.85, blue: 0.65, alpha: 1),  // soft green
-                    NSColor(red: 0.90, green: 0.70, blue: 0.60, alpha: 1),  // peach
-                    NSColor(red: 0.65, green: 0.75, blue: 0.85, alpha: 1),  // steel blue
+                quoted = NSColor(red: 0.60, green: 0.85, blue: 0.55, alpha: 1)
+                columns = [
+                    NSColor(red: 0.85, green: 0.75, blue: 0.55, alpha: 1), // warm yellow
+                    NSColor(red: 0.65, green: 0.80, blue: 0.90, alpha: 1), // light blue
+                    NSColor(red: 0.80, green: 0.65, blue: 0.80, alpha: 1), // lavender
+                    NSColor(red: 0.70, green: 0.85, blue: 0.65, alpha: 1), // soft green
+                    NSColor(red: 0.90, green: 0.70, blue: 0.60, alpha: 1), // peach
+                    NSColor(red: 0.65, green: 0.75, blue: 0.85, alpha: 1), // steel blue
                 ]
             } else {
-                header    = NSColor(red: 0.15, green: 0.35, blue: 0.70, alpha: 1)
+                header = NSColor(red: 0.15, green: 0.35, blue: 0.70, alpha: 1)
                 delimiter = NSColor(red: 0.55, green: 0.55, blue: 0.60, alpha: 1)
-                quoted    = NSColor(red: 0.20, green: 0.55, blue: 0.15, alpha: 1)
-                columns   = [
-                    NSColor(red: 0.60, green: 0.45, blue: 0.10, alpha: 1),  // dark gold
-                    NSColor(red: 0.15, green: 0.40, blue: 0.65, alpha: 1),  // blue
-                    NSColor(red: 0.50, green: 0.30, blue: 0.55, alpha: 1),  // purple
-                    NSColor(red: 0.20, green: 0.50, blue: 0.25, alpha: 1),  // green
-                    NSColor(red: 0.65, green: 0.35, blue: 0.20, alpha: 1),  // rust
-                    NSColor(red: 0.30, green: 0.45, blue: 0.60, alpha: 1),  // steel
+                quoted = NSColor(red: 0.20, green: 0.55, blue: 0.15, alpha: 1)
+                columns = [
+                    NSColor(red: 0.60, green: 0.45, blue: 0.10, alpha: 1), // dark gold
+                    NSColor(red: 0.15, green: 0.40, blue: 0.65, alpha: 1), // blue
+                    NSColor(red: 0.50, green: 0.30, blue: 0.55, alpha: 1), // purple
+                    NSColor(red: 0.20, green: 0.50, blue: 0.25, alpha: 1), // green
+                    NSColor(red: 0.65, green: 0.35, blue: 0.20, alpha: 1), // rust
+                    NSColor(red: 0.30, green: 0.45, blue: 0.60, alpha: 1), // steel
                 ]
             }
         }
@@ -191,7 +192,7 @@ enum CSVHighlighter {
             if char == "\"" {
                 inQuotes.toggle()
                 current.append(char)
-            } else if char == delimiter && !inQuotes {
+            } else if char == delimiter, !inQuotes {
                 fields.append(current)
                 current = ""
             } else {

@@ -186,6 +186,6 @@ final class VideoPreviewViewController: NSViewController, PreviewChild {
         if bps >= 1_000_000 {
             return String(format: "%.1f Mbps", bps / 1_000_000)
         }
-        return String(format: "%.0f kbps", bps / 1_000)
+        return String(format: "%.0f kbps", bps / 1000)
     }
 }

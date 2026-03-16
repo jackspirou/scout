@@ -52,7 +52,9 @@ final class RealtimeWaveView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
 
     deinit {
         stopDisplayLink()
@@ -64,7 +66,7 @@ final class RealtimeWaveView: NSView {
         // Ignore incoming FFT data while decaying — queued audio tap callbacks
         // arrive after pause and would fight the smooth decay to rest.
         guard !isDecaying else { return }
-        for i in 0..<min(bands.count, bandCount) {
+        for i in 0 ..< min(bands.count, bandCount) {
             targetValues[i] = bands[i]
         }
     }
@@ -104,7 +106,7 @@ final class RealtimeWaveView: NSView {
     func stopAnimating() {
         // Zero out targets so waves decay to rest, but keep the display link
         // running until values settle. The link self-stops in animateStep().
-        for i in 0..<bandCount {
+        for i in 0 ..< bandCount {
             targetValues[i] = 0
         }
         isDecaying = true
@@ -128,7 +130,7 @@ final class RealtimeWaveView: NSView {
         let clampedDT = min(dt, 0.1)
 
         var maxValue: Float = 0
-        for i in 0..<bandCount {
+        for i in 0 ..< bandCount {
             let current = displayValues[i]
             let target = targetValues[i]
             let speed = target > current ? attackSpeed : decaySpeed
@@ -142,7 +144,9 @@ final class RealtimeWaveView: NSView {
 
         // Once decaying and all values have settled near zero, stop.
         if isDecaying, maxValue < 0.001 {
-            for i in 0..<bandCount { displayValues[i] = 0 }
+            for i in 0 ..< bandCount {
+                displayValues[i] = 0
+            }
             stopDisplayLink()
             isDecaying = false
             needsDisplay = true
@@ -266,13 +270,15 @@ final class RealtimeWaveView: NSView {
         // Global energy across this wave's band range — bleeds into every
         // point so speech (concentrated in a few bands) still moves the wave.
         var rangeEnergy: CGFloat = 0
-        for i in bandStart..<bandEnd { rangeEnergy += CGFloat(displayValues[i]) }
+        for i in bandStart ..< bandEnd {
+            rangeEnergy += CGFloat(displayValues[i])
+        }
         let avgEnergy = rangeEnergy / CGFloat(count)
 
         // Left edge pinned to center
         points.append(CGPoint(x: 0, y: midY))
 
-        for idx in 0..<count {
+        for idx in 0 ..< count {
             let i = bandStart + idx
             let x = segmentWidth * CGFloat(idx + 1)
             let t = CGFloat(idx) / CGFloat(max(1, count - 1))
@@ -283,8 +289,8 @@ final class RealtimeWaveView: NSView {
 
             // Time-based oscillation for organic motion
             let wobble = sin(t * .pi * 2 + time * 2.0 + phaseOffset)
-                       + sin(t * .pi * 3.5 + time * 1.4) * harmonic
-                       + sin(t * .pi * 5.0 + time * 3.2 + phaseOffset * 0.5) * 0.3
+                + sin(t * .pi * 3.5 + time * 1.4) * harmonic
+                + sin(t * .pi * 5.0 + time * 3.2 + phaseOffset * 0.5) * 0.3
 
             let displacement = amp * (1.0 + wobble * 0.25)
             let y = midY - displacement * midY * 0.95
@@ -304,7 +310,7 @@ final class RealtimeWaveView: NSView {
         guard points.count >= 2 else { return path }
         path.move(to: points[0])
 
-        for i in 0..<(points.count - 1) {
+        for i in 0 ..< (points.count - 1) {
             let p0 = points[max(0, i - 1)]
             let p1 = points[i]
             let p2 = points[min(points.count - 1, i + 1)]

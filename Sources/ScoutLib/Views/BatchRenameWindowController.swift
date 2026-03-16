@@ -50,7 +50,7 @@ final class BatchRenameWindowController: NSWindowController {
     private let regexPatternField = NSTextField()
     private let regexReplacementField = NSTextField()
 
-    // Date Prefix fields
+    /// Date Prefix fields
     private let dateFormatField = NSTextField()
 
     private var previewNames: [(original: String, renamed: String)] = []

@@ -36,7 +36,7 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
 
     private enum Layout {
         static let maxFileSize: Int = 512 * 1024 // 512 KB
-        static let maxPreviewBytes: Int64 = Int64(maxFileSize)
+        static let maxPreviewBytes: Int64 = .init(maxFileSize)
         static let fontSize: CGFloat = 12
     }
 
@@ -81,14 +81,24 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
                     let attributedString: NSAttributedString
                     if self.currentItem?.isMermaid == true {
                         let isDark = self.view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                        attributedString = MermaidHighlighter.highlight(content, fontSize: Layout.fontSize, isDark: isDark)
+                        attributedString = MermaidHighlighter.highlight(
+                            content,
+                            fontSize: Layout.fontSize,
+                            isDark: isDark
+                        )
                     } else if self.currentItem?.isCSV == true || self.currentItem?.isTSV == true {
                         let isDark = self.view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
                         let delim: Character? = self.currentItem?.isTSV == true ? "\t" : nil
-                        attributedString = CSVHighlighter.highlight(content, delimiter: delim, fontSize: Layout.fontSize, isDark: isDark)
+                        attributedString = CSVHighlighter.highlight(
+                            content,
+                            delimiter: delim,
+                            fontSize: Layout.fontSize,
+                            isDark: isDark
+                        )
                     } else if let language = self.currentLanguage,
-                       let highlighter = self.highlighter,
-                       let highlighted = highlighter.highlight(content, as: language) {
+                              let highlighter = self.highlighter,
+                              let highlighted = highlighter.highlight(content, as: language)
+                    {
                         attributedString = highlighted
                     } else {
                         attributedString = Self.plainAttributedString(from: content)
@@ -137,13 +147,13 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
 
         // Track failed resource loads so we can warn when the page renders blank.
         let errorScript = WKUserScript(source: """
-            window.__failedResources = [];
-            window.addEventListener('error', function(e) {
-                if (e.target !== window && e.target.tagName) {
-                    window.__failedResources.push(e.target.src || e.target.href || e.target.tagName);
-                }
-            }, true);
-            """, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        window.__failedResources = [];
+        window.addEventListener('error', function(e) {
+            if (e.target !== window && e.target.tagName) {
+                window.__failedResources.push(e.target.src || e.target.href || e.target.tagName);
+            }
+        }, true);
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         config.userContentController.addUserScript(errorScript)
 
         webView = WKWebView(frame: .zero, configuration: config)
@@ -263,7 +273,7 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
     private func setMode(_ segment: Int) {
         guard let item = currentItem else { return }
 
-        if segment == 1 && (item.isMarkdown || item.isHTML || item.isMermaid) {
+        if segment == 1, item.isMarkdown || item.isHTML || item.isMermaid {
             // Preview mode
             isPreviewMode = true
             scrollView.isHidden = true
@@ -308,7 +318,10 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
             guard let self = self, self.isPreviewMode, self.webView.isHidden else { return }
             self.webView.stopLoading()
             let name = self.currentItem?.name ?? "file"
-            self.showRenderError("Preview Timed Out — \(name)\nLoading took longer than 5 seconds. The file may reference external resources that are unreachable. Try the Code view instead.")
+            self
+                .showRenderError(
+                    "Preview Timed Out — \(name)\nLoading took longer than 5 seconds. The file may reference external resources that are unreachable. Try the Code view instead."
+                )
         }
     }
 
@@ -454,9 +467,15 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
                     view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
                 }
                 let delim: Character? = item.isTSV ? "\t" : nil
-                attributedString = CSVHighlighter.highlight(content, delimiter: delim, fontSize: Layout.fontSize, isDark: isDark)
+                attributedString = CSVHighlighter.highlight(
+                    content,
+                    delimiter: delim,
+                    fontSize: Layout.fontSize,
+                    isDark: isDark
+                )
             } else if let language,
-               let highlighter = highlighter {
+                      let highlighter = highlighter
+            {
                 updateHighlighterTheme()
                 attributedString = highlighter.highlight(content, as: language)
                     ?? Self.plainAttributedString(from: content)
@@ -477,7 +496,6 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
             .foregroundColor: NSColor.labelColor,
         ])
     }
-
 
     private nonisolated static func decodeText(from data: Data) -> String {
         if let text = String(data: data, encoding: .utf8) {
@@ -551,9 +569,12 @@ extension TextFilePreviewViewController: WKNavigationDelegate {
                       let failedResources = info["failedResources"] as? Int,
                       self.currentItem?.url == itemURL else { return }
 
-                if textLength == 0 && failedResources > 0 {
+                if textLength == 0, failedResources > 0 {
                     let name = self.currentItem?.name ?? "file"
-                    self.showRenderError("Preview Blank — \(name)\nThe page rendered with no visible content. \(failedResources) external resource\(failedResources == 1 ? "" : "s") failed to load. The file may require a web server or network access. Try the Code view instead.")
+                    self
+                        .showRenderError(
+                            "Preview Blank — \(name)\nThe page rendered with no visible content. \(failedResources) external resource\(failedResources == 1 ? "" : "s") failed to load. The file may require a web server or network access. Try the Code view instead."
+                        )
                 }
             }
         }

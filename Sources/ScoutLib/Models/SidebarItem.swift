@@ -5,7 +5,7 @@ import Cocoa
 /// Sections displayed in the sidebar outline view.
 enum SidebarSection: String, CaseIterable {
     case favorites = "Favorites"
-    case iCloud = "iCloud"
+    case iCloud
     case nearby = "Nearby"
     case locations = "Locations"
     case tags = "Tags"

@@ -78,7 +78,9 @@ final class LineNumberRulerView: NSView {
 
     // MARK: - Drawing
 
-    override var isFlipped: Bool { true }
+    override var isFlipped: Bool {
+        true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let textView = textView,

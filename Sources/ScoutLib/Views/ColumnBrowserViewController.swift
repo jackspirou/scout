@@ -187,7 +187,7 @@ final class ColumnBrowserViewController: NSViewController {
 
     private func loadColumnAsync(for url: URL, atIndex columnIndex: Int) {
         loadingTask?.cancel()
-        let showHidden = self.showHiddenFiles
+        let showHidden = showHiddenFiles
         loadingTask = Task { [weak self] in
             guard let self else { return }
 

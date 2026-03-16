@@ -41,7 +41,9 @@ final class DirectorySizeCalculator {
 
     deinit {
         stopWatching()
-        for timer in recomputeTimers.values { timer.invalidate() }
+        for timer in recomputeTimers.values {
+            timer.invalidate()
+        }
     }
 
     // MARK: - Public API
@@ -61,7 +63,9 @@ final class DirectorySizeCalculator {
         stopWatching()
         cache.removeAll()
         pending.removeAll()
-        for timer in recomputeTimers.values { timer.invalidate() }
+        for timer in recomputeTimers.values {
+            timer.invalidate()
+        }
         recomputeTimers.removeAll()
     }
 
@@ -171,7 +175,7 @@ final class DirectorySizeCalculator {
     fileprivate func handleFSEvents(paths: [String], count: Int) {
         // Determine which cached directories are affected by these events.
         var affectedURLs: Set<URL> = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             let changedPath = paths[i]
             // Find which cached directory this path falls under.
             for cachedURL in cache.keys {

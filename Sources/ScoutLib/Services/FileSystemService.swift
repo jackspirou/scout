@@ -51,7 +51,7 @@ actor FileSystemService: FileSystemServiceProtocol {
     }
 
     func setIconStyle(_ style: IconStyle) {
-        self.iconStyle = style
+        iconStyle = style
     }
 
     // MARK: - Directory Contents
@@ -425,7 +425,12 @@ actor FileSystemService: FileSystemServiceProtocol {
         var isDir: ObjCBool = false
         fileManager.fileExists(atPath: url.path, isDirectory: &isDir)
 
-        let resolved = FileTypeResolver.resolve(url: url, isDirectory: isDir.boolValue, systemKind: nil, iconStyle: iconStyle)
+        let resolved = FileTypeResolver.resolve(
+            url: url,
+            isDirectory: isDir.boolValue,
+            systemKind: nil,
+            iconStyle: iconStyle
+        )
         return FileItem(
             url: url,
             name: name,

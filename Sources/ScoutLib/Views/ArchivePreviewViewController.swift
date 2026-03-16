@@ -265,9 +265,15 @@ final class ArchivePreviewViewController: NSViewController, PreviewChild {
             var rows: [MediaInfoRow] = []
             rows.append(MediaInfoRow(label: "Format", value: Self.formatName(for: ext)))
             rows.append(MediaInfoRow(label: "Entries", value: Self.entrySummary(files: fileCount, folders: dirCount)))
-            rows.append(MediaInfoRow(label: "Compressed", value: Self.byteFormatter.string(fromByteCount: compressedSize)))
+            rows.append(MediaInfoRow(
+                label: "Compressed",
+                value: Self.byteFormatter.string(fromByteCount: compressedSize)
+            ))
             if let uncompressedSize = parsed.totalSize {
-                rows.append(MediaInfoRow(label: "Uncompressed", value: Self.byteFormatter.string(fromByteCount: uncompressedSize)))
+                rows.append(MediaInfoRow(
+                    label: "Uncompressed",
+                    value: Self.byteFormatter.string(fromByteCount: uncompressedSize)
+                ))
                 if uncompressedSize > 0 {
                     let ratio = Int(round(Double(compressedSize) / Double(uncompressedSize) * 100))
                     rows.append(MediaInfoRow(label: "Ratio", value: "\(ratio)%"))
@@ -275,7 +281,7 @@ final class ArchivePreviewViewController: NSViewController, PreviewChild {
             }
 
             if ext == "ipa" {
-                let ipaRows = self.extractIPAInfo(url: url)
+                let ipaRows = extractIPAInfo(url: url)
                 rows.append(contentsOf: ipaRows)
             }
 
@@ -437,7 +443,12 @@ final class ArchivePreviewViewController: NSViewController, PreviewChild {
                 var rows: [MediaInfoRow] = []
                 rows.append(MediaInfoRow(label: "Format", value: "7-Zip Archive"))
                 rows.append(MediaInfoRow(label: "Size", value: Self.byteFormatter.string(fromByteCount: fileSize)))
-                self.finishLoading(rows: rows, summary: Self.byteFormatter.string(fromByteCount: fileSize), kind: kind, showTree: false)
+                self.finishLoading(
+                    rows: rows,
+                    summary: Self.byteFormatter.string(fromByteCount: fileSize),
+                    kind: kind,
+                    showTree: false
+                )
                 self.errorLabel.stringValue = "Install 7-Zip to preview contents"
                 self.errorLabel.isHidden = false
             }
@@ -489,7 +500,12 @@ final class ArchivePreviewViewController: NSViewController, PreviewChild {
                 var rows: [MediaInfoRow] = []
                 rows.append(MediaInfoRow(label: "Format", value: "RAR Archive"))
                 rows.append(MediaInfoRow(label: "Size", value: Self.byteFormatter.string(fromByteCount: fileSize)))
-                self.finishLoading(rows: rows, summary: Self.byteFormatter.string(fromByteCount: fileSize), kind: kind, showTree: false)
+                self.finishLoading(
+                    rows: rows,
+                    summary: Self.byteFormatter.string(fromByteCount: fileSize),
+                    kind: kind,
+                    showTree: false
+                )
                 self.errorLabel.stringValue = "Install unrar to preview contents"
                 self.errorLabel.isHidden = false
             }
@@ -600,8 +616,9 @@ final class ArchivePreviewViewController: NSViewController, PreviewChild {
             guard process.terminationStatus == 0 else { return nil }
 
             // Parse plist output to find mount point
-            guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
-                  let entities = plist["system-entities"] as? [[String: Any]]
+            guard let plist = try? PropertyListSerialization
+                .propertyList(from: data, options: [], format: nil) as? [String: Any],
+                let entities = plist["system-entities"] as? [[String: Any]]
             else { return nil }
 
             for entity in entities {
@@ -852,7 +869,9 @@ final class ArchivePreviewViewController: NSViewController, PreviewChild {
     /// ---------                     -------
     ///      1234                     1 file
     /// ```
-    private static func parseUnzipListing(_ output: String) -> (entries: [(path: String, size: Int64)], totalSize: Int64?) {
+    private static func parseUnzipListing(_ output: String)
+        -> (entries: [(path: String, size: Int64)], totalSize: Int64?)
+    {
         var entries: [(path: String, size: Int64)] = []
         var totalSize: Int64?
         var inTable = false
@@ -1043,17 +1062,20 @@ final class ArchivePreviewViewController: NSViewController, PreviewChild {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if trimmed.hasPrefix("Format Description:") {
-                let value = trimmed.replacingOccurrences(of: "Format Description:", with: "").trimmingCharacters(in: .whitespaces)
+                let value = trimmed.replacingOccurrences(of: "Format Description:", with: "")
+                    .trimmingCharacters(in: .whitespaces)
                 if !value.isEmpty {
                     rows.append(MediaInfoRow(label: "DMG Format", value: value))
                 }
             } else if trimmed.hasPrefix("Encrypted:") {
-                let value = trimmed.replacingOccurrences(of: "Encrypted:", with: "").trimmingCharacters(in: .whitespaces)
+                let value = trimmed.replacingOccurrences(of: "Encrypted:", with: "")
+                    .trimmingCharacters(in: .whitespaces)
                 if !value.isEmpty {
                     rows.append(MediaInfoRow(label: "Encrypted", value: value))
                 }
             } else if trimmed.hasPrefix("Partition Type:") {
-                let value = trimmed.replacingOccurrences(of: "Partition Type:", with: "").trimmingCharacters(in: .whitespaces)
+                let value = trimmed.replacingOccurrences(of: "Partition Type:", with: "")
+                    .trimmingCharacters(in: .whitespaces)
                 if !value.isEmpty {
                     rows.append(MediaInfoRow(label: "Partitions", value: value))
                 }
@@ -1072,7 +1094,8 @@ final class ArchivePreviewViewController: NSViewController, PreviewChild {
         ) else { return rows }
 
         guard let data = output.data(using: .utf8), !data.isEmpty,
-              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+              let plist = try? PropertyListSerialization
+              .propertyList(from: data, options: [], format: nil) as? [String: Any]
         else { return rows }
 
         if let name = plist["CFBundleName"] as? String {
@@ -1235,7 +1258,10 @@ extension ArchivePreviewViewController: NSOutlineViewDelegate {
             }
 
             let symbolName = entry.isDirectory ? "folder" : "doc"
-            cell.imageView?.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: entry.isDirectory ? "Folder" : "File")
+            cell.imageView?.image = NSImage(
+                systemSymbolName: symbolName,
+                accessibilityDescription: entry.isDirectory ? "Folder" : "File"
+            )
             cell.textField?.stringValue = entry.name
             return cell
         }

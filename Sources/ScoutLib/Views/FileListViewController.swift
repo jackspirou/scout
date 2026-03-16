@@ -74,7 +74,11 @@ final class FileListViewController: NSViewController {
 
     // MARK: - Init
 
-    init(clipboardManager: ClipboardManager = ClipboardManager(), iconStyle: IconStyle = .system, showHiddenFiles: Bool = true) {
+    init(
+        clipboardManager: ClipboardManager = ClipboardManager(),
+        iconStyle: IconStyle = .system,
+        showHiddenFiles: Bool = true
+    ) {
         self.iconStyle = iconStyle
         self.showHiddenFiles = showHiddenFiles
         self.clipboardManager = clipboardManager
@@ -316,7 +320,10 @@ final class FileListViewController: NSViewController {
         loadingTask = Task { [weak self] in
             guard let self else { return }
 
-            let items = (try? await self.fileSystemService.contentsOfDirectory(at: url, showHiddenFiles: self.showHiddenFiles)) ?? []
+            let items = (try? await self.fileSystemService.contentsOfDirectory(
+                at: url,
+                showHiddenFiles: self.showHiddenFiles
+            )) ?? []
 
             guard !Task.isCancelled else { return }
 
@@ -336,7 +343,7 @@ final class FileListViewController: NSViewController {
         let isFirstBatch = (currentDirectoryURL != nil || allItems.isEmpty)
         loadingTask?.cancel()
         currentDirectoryURL = nil
-        filterQuery = ""  // Search results are already filtered; don't apply local filter on top.
+        filterQuery = "" // Search results are already filtered; don't apply local filter on top.
         allItems = items
         sortItems()
         tableView.reloadData()
@@ -484,8 +491,12 @@ final class FileListViewController: NSViewController {
         guard row >= 0 else { return }
         let columnIndex = tableView.column(withIdentifier: .nameColumn)
         guard columnIndex >= 0 else { return }
-        guard let cellView = tableView.view(atColumn: columnIndex, row: row, makeIfNecessary: false) as? NSTableCellView,
-              let textField = cellView.textField else { return }
+        guard let cellView = tableView.view(
+            atColumn: columnIndex,
+            row: row,
+            makeIfNecessary: false
+        ) as? NSTableCellView,
+            let textField = cellView.textField else { return }
         textField.isEditable = true
         textField.isSelectable = true
         view.window?.makeFirstResponder(textField)
@@ -676,7 +687,7 @@ final class FileListViewController: NSViewController {
 
                 guard let newItem = FileItem.create(from: url, iconStyle: iconStyle) else { continue }
                 // Skip hidden files to match loadDirectory behavior.
-                if !showHiddenFiles && newItem.isHidden { continue }
+                if !showHiddenFiles, newItem.isHidden { continue }
 
                 allItems.append(newItem)
                 let insertionIndex = sortedInsertionIndex(for: newItem)
@@ -700,7 +711,7 @@ final class FileListViewController: NSViewController {
                 // Refresh metadata by creating a new FileItem.
                 guard let refreshedItem = FileItem.create(from: url, iconStyle: iconStyle) else { continue }
                 // Skip hidden files.
-                if !showHiddenFiles && refreshedItem.isHidden { continue }
+                if !showHiddenFiles, refreshedItem.isHidden { continue }
 
                 // Replace in allItems.
                 if let allIndex = allItems.firstIndex(where: { $0.url == url }) {
@@ -862,7 +873,11 @@ final class FileListViewController: NSViewController {
     // MARK: - Header Context Menu (Show/Hide Columns)
 
     /// All columns available for show/hide, mapped from SortField to column identifier and display title.
-    private static let allColumnDefinitions: [(sortField: SortField, identifier: NSUserInterfaceItemIdentifier, title: String)] = [
+    private static let allColumnDefinitions: [(
+        sortField: SortField,
+        identifier: NSUserInterfaceItemIdentifier,
+        title: String
+    )] = [
         (.name, .nameColumn, "Name"),
         (.dateModified, .dateModifiedColumn, "Updated At"),
         (.dateCreated, .dateCreatedColumn, "Created At"),
@@ -982,7 +997,8 @@ final class FileListViewController: NSViewController {
         let nameColumnIndex = tableView.column(withIdentifier: .nameColumn)
         if clickedRow == previouslySelectedRow,
            clickedColumn == nameColumnIndex,
-           tableView.selectedRowIndexes.count == 1 {
+           tableView.selectedRowIndexes.count == 1
+        {
             renameClickTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
                 guard let self else { return }
                 self.renameClickTimer = nil

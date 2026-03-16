@@ -345,7 +345,11 @@ final class AudioPreviewViewController: NSViewController, PreviewChild {
         removeTimeObserver()
         statusObservation?.invalidate()
         statusObservation = nil
-        NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: player?.currentItem)
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .AVPlayerItemDidPlayToEndTime,
+            object: player?.currentItem
+        )
         player = nil
     }
 

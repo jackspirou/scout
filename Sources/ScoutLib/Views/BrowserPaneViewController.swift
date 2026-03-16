@@ -13,7 +13,8 @@ final class BrowserPaneViewController: NSViewController {
 
     weak var delegate: BrowserPaneDelegate?
 
-    /// Called on spacebar press. Return `true` if handled (e.g. audio play/pause), `false` to fall through to Quick Look.
+    /// Called on spacebar press. Return `true` if handled (e.g. audio play/pause), `false` to fall through to Quick
+    /// Look.
     var onSpacebarPressed: (() -> Bool)?
 
     private var tabs: [BrowserTabState] = []
@@ -55,7 +56,11 @@ final class BrowserPaneViewController: NSViewController {
         self.clipboardManager = clipboardManager
         self.iconStyle = iconStyle
         self.showHiddenFiles = showHiddenFiles
-        fileListViewController = FileListViewController(clipboardManager: clipboardManager, iconStyle: iconStyle, showHiddenFiles: showHiddenFiles)
+        fileListViewController = FileListViewController(
+            clipboardManager: clipboardManager,
+            iconStyle: iconStyle,
+            showHiddenFiles: showHiddenFiles
+        )
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -607,9 +612,10 @@ final class BrowserPaneViewController: NSViewController {
 
         // Restore the persisted view mode for this directory if it differs
         if let saved = PersistenceService.shared.loadViewSettings(for: url),
-           saved.viewMode != currentViewMode {
+           saved.viewMode != currentViewMode
+        {
             setViewMode(saved.viewMode)
-            return  // setViewMode already loads the directory
+            return // setViewMode already loads the directory
         }
 
         // Reload whichever view is currently active
@@ -641,7 +647,9 @@ final class BrowserPaneViewController: NSViewController {
     private func updateStatusBar(itemCount: Int, selectedCount: Int) {
         let formattedCount = Self.numberFormatter.string(from: NSNumber(value: itemCount)) ?? "\(itemCount)"
         if selectedCount > 0 {
-            let formattedSelected = Self.numberFormatter.string(from: NSNumber(value: selectedCount)) ?? "\(selectedCount)"
+            let formattedSelected = Self.numberFormatter.string(from: NSNumber(
+                value: selectedCount
+            )) ?? "\(selectedCount)"
             statusBar.stringValue = "\(formattedCount) items, \(formattedSelected) selected"
         } else {
             statusBar.stringValue = "\(formattedCount) items"

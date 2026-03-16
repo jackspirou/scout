@@ -19,10 +19,14 @@ final class WaveformView: NSView {
     // MARK: - Properties
 
     /// The waveform data to render.
-    var waveformData: WaveformData? { didSet { needsDisplay = true } }
+    var waveformData: WaveformData? {
+        didSet { needsDisplay = true }
+    }
 
     /// Current playback progress in [0, 1].
-    var progress: CGFloat = 0 { didSet { needsDisplay = true } }
+    var progress: CGFloat = 0 {
+        didSet { needsDisplay = true }
+    }
 
     /// Called when the user clicks to seek. Parameter is normalized position [0, 1].
     var onSeek: ((Double) -> Void)?
@@ -39,7 +43,9 @@ final class WaveformView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
 
     // MARK: - Drawing
 
@@ -60,7 +66,7 @@ final class WaveformView: NSView {
         let unplayedColor = NSColor.secondaryLabelColor.withAlphaComponent(0.3).cgColor
         let playedIndex = Int(progress * CGFloat(sampleCount))
 
-        for i in 0..<Int(width) {
+        for i in 0 ..< Int(width) {
             let sampleIndex = Int(Double(i) / Double(width) * Double(sampleCount))
             guard sampleIndex < sampleCount else { continue }
 
@@ -189,7 +195,7 @@ final class WaveformView: NSView {
 
             let floatCount = length / MemoryLayout<Float>.size
             pointer.withMemoryRebound(to: Float.self, capacity: floatCount) { floatPointer in
-                for j in 0..<floatCount {
+                for j in 0 ..< floatCount {
                     let bucketIndex = min(sampleIndex / samplesPerBucket, bucketCount - 1)
                     let val = floatPointer[j]
                     if val < result[bucketIndex].min { result[bucketIndex].min = val }

@@ -7,7 +7,7 @@ enum ScoutDropPeerState {
     case discovered
     case connecting
     case connected
-    case transferring(progress: Double)  // 0.0 to 1.0
+    case transferring(progress: Double) // 0.0 to 1.0
     case disconnected
 }
 

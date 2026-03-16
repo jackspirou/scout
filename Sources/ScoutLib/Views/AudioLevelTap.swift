@@ -39,7 +39,7 @@ private final class TapContext {
     var magnitudes: [Float]
     var bandResult: [Float]
 
-    // Frequency band bin ranges (logarithmically spaced)
+    /// Frequency band bin ranges (logarithmically spaced)
     var bands: [(low: Int, high: Int)]
 
     init() {
@@ -81,12 +81,12 @@ private final class TapContext {
     static func logarithmicBands(
         count: Int, fftSize: Int, sampleRate: Float
     ) -> [(low: Int, high: Int)] {
-        let minFreq: Float = 80    // skip sub-bass rumble
+        let minFreq: Float = 80 // skip sub-bass rumble
         let maxFreq: Float = 16000 // skip inaudible ultrasonic
         let maxBin = fftSize / 2 - 1
 
         var result: [(low: Int, high: Int)] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             let lowFreq = minFreq * pow(maxFreq / minFreq, Float(i) / Float(count))
             let highFreq = minFreq * pow(maxFreq / minFreq, Float(i + 1) / Float(count))
             let lowBin = min(maxBin, max(1, Int(lowFreq * Float(fftSize) / sampleRate)))
@@ -166,7 +166,7 @@ final class AudioLevelTap {
 
         playerItem.audioMix = audioMix
 
-        self.tap = tapValue
+        tap = tapValue
         self.playerItem = playerItem
     }
 
@@ -182,7 +182,7 @@ final class AudioLevelTap {
 // MARK: - Tap Callbacks
 
 /// Called when the tap is initialized. Stores the context pointer in tapStorage.
-private let tapInit: MTAudioProcessingTapInitCallback = { tap, clientInfo, tapStorageOut in
+private let tapInit: MTAudioProcessingTapInitCallback = { _, clientInfo, tapStorageOut in
     tapStorageOut.pointee = clientInfo
 }
 
@@ -210,8 +210,7 @@ private let tapUnprepare: MTAudioProcessingTapUnprepareCallback = { _ in }
 /// Performs FFT, groups magnitudes into logarithmic frequency bands,
 /// converts to dB, normalizes, and dispatches to main thread.
 private let tapProcess: MTAudioProcessingTapProcessCallback = {
-    tap, numberFrames, flags, bufferListInOut, numberFramesOut, flagsOut in
-
+    tap, numberFrames, _, bufferListInOut, numberFramesOut, flagsOut in
     let status = MTAudioProcessingTapGetSourceAudio(
         tap, numberFrames, bufferListInOut, flagsOut, nil, numberFramesOut
     )
@@ -234,7 +233,7 @@ private let tapProcess: MTAudioProcessingTapProcessCallback = {
 
     // Zero-pad if buffer is smaller than FFT size
     if n < kFFTSize {
-        for i in n..<kFFTSize {
+        for i in n ..< kFFTSize {
             context.windowedSamples[i] = 0
         }
     }
@@ -264,13 +263,13 @@ private let tapProcess: MTAudioProcessingTapProcessCallback = {
     // Group into logarithmic frequency bands using max magnitude per band,
     // apply spectral tilt compensation, convert to dB, and normalize to 0...1.
     let dbRange = kMaxDB - kMinDB
-    for i in 0..<kSpectrumBandCount {
+    for i in 0 ..< kSpectrumBandCount {
         let band = context.bands[i]
         var maxMag: Float = 0
         let lo = min(band.low, context.halfSize - 1)
         let hi = min(band.high, context.halfSize - 1)
         guard lo <= hi else { continue }
-        for bin in lo...hi {
+        for bin in lo ... hi {
             if context.magnitudes[bin] > maxMag {
                 maxMag = context.magnitudes[bin]
             }

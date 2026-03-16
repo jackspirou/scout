@@ -99,8 +99,8 @@ final class MainWindowController: NSWindowController {
     convenience init() {
         let window = Self.makeWindow()
         self.init(window: window)
-        self.iconStyle = PersistenceService.shared.loadIconStyle()
-        self.showHiddenFiles = PersistenceService.shared.loadShowHiddenFiles()
+        iconStyle = PersistenceService.shared.loadIconStyle()
+        showHiddenFiles = PersistenceService.shared.loadShowHiddenFiles()
         browserContainer.setIconStyle(iconStyle)
         browserContainer.setShowHiddenFiles(showHiddenFiles)
         previewViewController.onNavigate = { [weak self] (url: URL) in
@@ -161,9 +161,11 @@ final class MainWindowController: NSWindowController {
             sidebarViewController.view.topAnchor.constraint(equalTo: sidebarView.topAnchor),
             sidebarViewController.view.bottomAnchor.constraint(equalTo: sidebarView.bottomAnchor),
             sidebarViewController.view.leadingAnchor.constraint(
-                equalTo: sidebarView.leadingAnchor),
+                equalTo: sidebarView.leadingAnchor
+            ),
             sidebarViewController.view.trailingAnchor.constraint(
-                equalTo: sidebarView.trailingAnchor),
+                equalTo: sidebarView.trailingAnchor
+            ),
         ])
 
         sidebarWidthConstraint = sidebarView.widthAnchor.constraint(
@@ -397,7 +399,7 @@ final class MainWindowController: NSWindowController {
 
             let folderURL: URL?
             switch scope {
-            case .currentFolder(let url), .subfolder(let url):
+            case let .currentFolder(url), let .subfolder(url):
                 folderURL = url
             case .fullDisk:
                 folderURL = nil
@@ -445,7 +447,7 @@ final class MainWindowController: NSWindowController {
             // an indexed volume (handled by FileManager.enumerator above).
             if folderURL == nil {
                 let searchfsStream = await self.searchfsService.searchNonIndexedVolumes(
-                    query: query, maxResults: 10_000
+                    query: query, maxResults: 10000
                 )
                 for await batch in searchfsStream {
                     guard !Task.isCancelled else { return }
@@ -564,7 +566,12 @@ final class MainWindowController: NSWindowController {
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
         let homeName = homeURL.lastPathComponent
 
-        let segment = NSSegmentedControl(labels: ["Current Folder", homeName, "This Mac"], trackingMode: .selectOne, target: self, action: #selector(searchScopeChanged(_:)))
+        let segment = NSSegmentedControl(
+            labels: ["Current Folder", homeName, "This Mac"],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(searchScopeChanged(_:))
+        )
         segment.selectedSegment = 1
         segment.translatesAutoresizingMaskIntoConstraints = false
         segment.controlSize = .small
@@ -744,7 +751,8 @@ final class MainWindowController: NSWindowController {
 
         if !urls.isEmpty,
            let service = NSSharingService(named: .sendViaAirDrop),
-           service.canPerform(withItems: urls) {
+           service.canPerform(withItems: urls)
+        {
             // Files selected — show the system AirDrop device picker to send them.
             service.perform(withItems: urls)
         } else {
@@ -752,7 +760,8 @@ final class MainWindowController: NSWindowController {
             // browse nearby devices. This is the same approach Path Finder and
             // other third-party file managers use; there is no public API to
             // embed the AirDrop device browser in a non-Finder app.
-            let airdropApp = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/Applications/AirDrop.app")
+            let airdropApp =
+                URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/Applications/AirDrop.app")
             NSWorkspace.shared.open(airdropApp)
         }
     }
@@ -792,7 +801,7 @@ final class MainWindowController: NSWindowController {
         // Consume outgoing verification codes and show them to the sender.
         scoutDropVerificationTask = Task { [weak self] in
             guard let self else { return }
-            for await (peerName, code) in self.scoutDropService.outgoingVerifications {
+            for await(peerName, code) in self.scoutDropService.outgoingVerifications {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     let alert = NSAlert()
@@ -821,11 +830,11 @@ final class MainWindowController: NSWindowController {
                     let alert = NSAlert()
                     alert.messageText = "Security Warning"
                     alert.informativeText = """
-                        The identity of "\(offer.senderName)" has changed since you last \
-                        connected. This could mean someone is impersonating this device.\n\n\
-                        The transfer has been automatically declined. If this device was \
-                        recently reinstalled, remove it from trusted peers and try again.
-                        """
+                    The identity of "\(offer.senderName)" has changed since you last \
+                    connected. This could mean someone is impersonating this device.\n\n\
+                    The transfer has been automatically declined. If this device was \
+                    recently reinstalled, remove it from trusted peers and try again.
+                    """
                     alert.alertStyle = .critical
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
@@ -918,9 +927,10 @@ final class MainWindowController: NSWindowController {
 
             var items: [FileItem] = []
             let limit = min(query.resultCount, 200)
-            for i in 0..<limit {
+            for i in 0 ..< limit {
                 if let result = query.result(at: i) as? NSMetadataItem,
-                   let path = result.value(forAttribute: NSMetadataItemPathKey) as? String {
+                   let path = result.value(forAttribute: NSMetadataItemPathKey) as? String
+                {
                     let url = URL(fileURLWithPath: path)
                     if let fileItem = FileItem.create(from: url, iconStyle: self.iconStyle) {
                         items.append(fileItem)
@@ -934,7 +944,7 @@ final class MainWindowController: NSWindowController {
             )
         }
 
-        self.recentsSearchQuery = query
+        recentsSearchQuery = query
         query.start()
     }
 
@@ -980,9 +990,10 @@ final class MainWindowController: NSWindowController {
             }
 
             var items: [FileItem] = []
-            for i in 0..<query.resultCount {
+            for i in 0 ..< query.resultCount {
                 if let result = query.result(at: i) as? NSMetadataItem,
-                   let path = result.value(forAttribute: NSMetadataItemPathKey) as? String {
+                   let path = result.value(forAttribute: NSMetadataItemPathKey) as? String
+                {
                     let url = URL(fileURLWithPath: path)
                     if let fileItem = FileItem.create(from: url, iconStyle: self.iconStyle) {
                         items.append(fileItem)
@@ -996,7 +1007,7 @@ final class MainWindowController: NSWindowController {
             )
         }
 
-        self.tagSearchQuery = query
+        tagSearchQuery = query
         query.start()
     }
 }
@@ -1054,7 +1065,8 @@ extension MainWindowController: NSToolbarDelegate {
         item.paletteLabel = "Toggle Sidebar"
         item.toolTip = "Toggle Sidebar"
         item.image = NSImage(
-            systemSymbolName: "sidebar.left", accessibilityDescription: "Sidebar")
+            systemSymbolName: "sidebar.left", accessibilityDescription: "Sidebar"
+        )
         item.target = self
         item.action = #selector(toggleSidebarAction(_:))
         return item
@@ -1251,7 +1263,9 @@ extension MainWindowController: BrowserContainerDelegate {
             // Auto-open preview on first text/image file selection (unless user dismissed it).
             // previewDidChange() already calls updatePreviewForCurrentSelection(), so skip
             // the explicit previewItem call when auto-opening to avoid loading twice.
-            if !showPreview, !userDismissedPreview, !item.isDirectory, (item.isText || item.isImage || item.isPDF || item.isVideo || item.isAudio) {
+            if !showPreview, !userDismissedPreview, !item.isDirectory,
+               item.isText || item.isImage || item.isPDF || item.isVideo || item.isAudio
+            {
                 showPreview = true
                 return
             }

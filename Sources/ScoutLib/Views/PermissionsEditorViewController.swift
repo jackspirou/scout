@@ -17,7 +17,7 @@ final class PermissionsEditorViewController: NSViewController {
 
     // MARK: - Permission Bit Layout
 
-    // Each entry is (row, col, bit)
+    /// Each entry is (row, col, bit)
     private static let bitMap: [(Int, Int, UInt16)] = [
         (0, 0, 0o400), (0, 1, 0o200), (0, 2, 0o100), // Owner: r, w, x
         (1, 0, 0o040), (1, 1, 0o020), (1, 2, 0o010), // Group: r, w, x
@@ -31,7 +31,7 @@ final class PermissionsEditorViewController: NSViewController {
         self.permissions = permissions
 
         // Check if the file itself is writable by the current user
-        self.readOnly = !FileManager.default.isWritableFile(atPath: url.path)
+        readOnly = !FileManager.default.isWritableFile(atPath: url.path)
 
         super.init(nibName: nil, bundle: nil)
     }
@@ -71,7 +71,7 @@ final class PermissionsEditorViewController: NSViewController {
             var rowViews: [NSView] = [label]
             var rowCheckboxes: [NSButton] = []
 
-            for colIndex in 0..<3 {
+            for colIndex in 0 ..< 3 {
                 let checkbox = NSButton(checkboxWithTitle: "", target: self, action: #selector(checkboxChanged(_:)))
                 checkbox.tag = rowIndex * 3 + colIndex
                 checkbox.isEnabled = !readOnly
@@ -96,7 +96,7 @@ final class PermissionsEditorViewController: NSViewController {
         gridView.column(at: 0).xPlacement = .trailing
 
         // Center the checkboxes in their cells
-        for colIdx in 1...3 {
+        for colIdx in 1 ... 3 {
             gridView.column(at: colIdx).xPlacement = .center
         }
 

@@ -343,7 +343,11 @@ extension DirectoryPreviewViewController: NSMenuDelegate {
         menu.addItem(.separator())
 
         // Show in Finder
-        let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextShowInFinder(_:)), keyEquivalent: "")
+        let finderItem = NSMenuItem(
+            title: "Show in Finder",
+            action: #selector(contextShowInFinder(_:)),
+            keyEquivalent: ""
+        )
         finderItem.target = self
         finderItem.representedObject = item
         menu.addItem(finderItem)

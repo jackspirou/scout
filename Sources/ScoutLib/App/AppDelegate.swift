@@ -286,7 +286,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 key: "s",
                 modifiers: [.command, .option]
             ),
-            .item("Toggle Dual Pane", action: #selector(handleToggleDualPane(_:)), key: "d", modifiers: [.command, .option]),
+            .item(
+                "Toggle Dual Pane",
+                action: #selector(handleToggleDualPane(_:)),
+                key: "d",
+                modifiers: [.command, .option]
+            ),
             .item(
                 "Toggle Preview",
                 action: #selector(handleTogglePreview(_:)),
@@ -439,9 +444,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func handleGoToPath(_ sender: Any?) {
         guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
-        let goToPath = GoToPathWindowController(currentDirectoryURL: windowController.currentURL(), onNavigate: { [weak windowController] url in
-            windowController?.navigateToURL(url)
-        })
+        let goToPath = GoToPathWindowController(
+            currentDirectoryURL: windowController.currentURL(),
+            onNavigate: { [weak windowController] url in
+                windowController?.navigateToURL(url)
+            }
+        )
         goToPathController = goToPath
         goToPath.showPanel(relativeTo: windowController.window)
     }
@@ -553,7 +561,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let wc = NSApp.keyWindow?.windowController as? MainWindowController else { return }
         wc.clipboardManager.clearHistory()
     }
-
 
     // MARK: - Hidden Files Action
 
