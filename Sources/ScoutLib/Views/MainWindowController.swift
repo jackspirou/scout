@@ -501,29 +501,26 @@ final class MainWindowController: NSWindowController {
         // Use a synchronous closure for FileManager.enumerator iteration to avoid
         // the Swift 6 warning about makeIterator being unavailable in async contexts.
         return await Task.detached {
-            let results: [FileItem] = {
-                var items: [FileItem] = []
-                let fm = FileManager.default
-                guard let enumerator = fm.enumerator(
-                    at: directory,
-                    includingPropertiesForKeys: [.nameKey, .isDirectoryKey],
-                    options: [.skipsPackageDescendants]
-                ) else { return items }
+            var items: [FileItem] = []
+            let fm = FileManager.default
+            guard let enumerator = fm.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.nameKey, .isDirectoryKey],
+                options: [.skipsPackageDescendants]
+            ) else { return items }
 
-                for case let url as URL in enumerator {
-                    if Task.isCancelled { break }
-                    let name = url.lastPathComponent
-                    if GlobPattern.matches(name, regex: regex) {
-                        if let item = FileItem.create(from: url, iconStyle: .system) {
-                            items.append(item)
-                        }
+            for case let url as URL in enumerator {
+                if Task.isCancelled { break }
+                let name = url.lastPathComponent
+                if GlobPattern.matches(name, regex: regex) {
+                    if let item = FileItem.create(from: url, iconStyle: .system) {
+                        items.append(item)
                     }
-                    // Cap results to avoid hanging on huge directory trees.
-                    if items.count >= 1000 { break }
                 }
-                return items
-            }()
-            return results
+                // Cap results to avoid hanging on huge directory trees.
+                if items.count >= 1000 { break }
+            }
+            return items
         }.value
     }
 
