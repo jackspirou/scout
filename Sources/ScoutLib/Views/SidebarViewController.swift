@@ -10,11 +10,16 @@ final class SidebarViewController: NSViewController {
     var onShowRecents: (() -> Void)?
     var onAirDrop: (() -> Void)?
     var onScoutDrop: (([URL], ScoutDropPeer) -> Void)?
+    var onLoadWorkspace: ((Workspace) -> Void)?
+    var onSaveWorkspace: (() -> Void)?
 
     private let outlineView = NSOutlineView()
     private let scrollView = NSScrollView()
 
     private var sectionItems: [SidebarSection: [SidebarItem]] = [:]
+
+    /// The currently active workspace ID, used to bold its name in the sidebar.
+    private var activeWorkspaceID: UUID?
 
     /// Sections currently visible in the sidebar. Hides Nearby when empty.
     private var visibleSections: [SidebarSection] {
@@ -85,9 +90,10 @@ final class SidebarViewController: NSViewController {
         outlineView.target = self
         outlineView.action = #selector(outlineViewClicked(_:))
 
-        // Register for drag-drop of file URLs onto Favorites
-        outlineView.registerForDraggedTypes([.fileURL])
+        // Register for drag-drop of file URLs onto Favorites and workspace reordering
+        outlineView.registerForDraggedTypes([.fileURL, .workspaceReorder])
         outlineView.setDraggingSourceOperationMask(.every, forLocal: false)
+        outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
 
         // Context menu
         let menu = NSMenu()
@@ -100,6 +106,7 @@ final class SidebarViewController: NSViewController {
     // MARK: - Data Loading
 
     func reloadAllSections() {
+        sectionItems[.workspaces] = loadWorkspaces()
         sectionItems[.favorites] = loadFavorites()
         sectionItems[.iCloud] = loadICloud()
         sectionItems[.nearby] = []
@@ -110,6 +117,32 @@ final class SidebarViewController: NSViewController {
         // Expand all sections by default
         for section in visibleSections {
             outlineView.expandItem(section)
+        }
+    }
+
+    /// Reloads only the Workspaces section. Can be called externally after
+    /// a workspace is saved or deleted.
+    func reloadWorkspaces() {
+        sectionItems[.workspaces] = loadWorkspaces()
+        outlineView.reloadItem(SidebarSection.workspaces, reloadChildren: true)
+        outlineView.expandItem(SidebarSection.workspaces)
+    }
+
+    /// Marks the given workspace as active so its name renders bold.
+    func setActiveWorkspace(_ workspace: Workspace?) {
+        activeWorkspaceID = workspace?.id
+        outlineView.reloadItem(SidebarSection.workspaces, reloadChildren: true)
+        outlineView.expandItem(SidebarSection.workspaces)
+
+        // Re-select the active workspace row so the highlight persists
+        if let id = activeWorkspaceID,
+           let items = sectionItems[.workspaces],
+           let item = items.first(where: { $0.workspace?.id == id })
+        {
+            let row = outlineView.row(forItem: item)
+            if row >= 0 {
+                outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            }
         }
     }
 
@@ -150,6 +183,37 @@ final class SidebarViewController: NSViewController {
             outlineView.reloadItem(SidebarSection.nearby, reloadChildren: true)
             outlineView.expandItem(SidebarSection.nearby)
         }
+    }
+
+    // MARK: - Workspaces
+
+    private func loadWorkspaces() -> [SidebarItem] {
+        let workspaces = PersistenceService.shared.listWorkspacesSync()
+        let icon = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: "Workspace")
+            ?? NSImage(named: NSImage.folderName)!
+
+        var items: [SidebarItem] = workspaces.map { workspace in
+            SidebarItem(
+                url: URL(fileURLWithPath: "/workspaces/\(workspace.id.uuidString)"),
+                name: workspace.name,
+                icon: icon,
+                section: .workspaces,
+                workspace: workspace
+            )
+        }
+
+        // "Save Workspace..." action row at the bottom
+        let saveIcon = NSImage(systemSymbolName: "plus", accessibilityDescription: "Save Workspace")
+            ?? NSImage(named: NSImage.addTemplateName)!
+        items.append(SidebarItem(
+            url: URL(fileURLWithPath: "/workspaces/save"),
+            name: "Save Workspace...",
+            icon: saveIcon,
+            section: .workspaces,
+            isSaveWorkspaceAction: true
+        ))
+
+        return items
     }
 
     // MARK: - Favorites
@@ -297,7 +361,14 @@ final class SidebarViewController: NSViewController {
         guard row >= 0 else { return }
         let item = sender.item(atRow: row)
         if let sidebarItem = item as? SidebarItem {
-            if sidebarItem.url == Self.airdropURL {
+            if sidebarItem.isSaveWorkspaceAction {
+                onSaveWorkspace?()
+            } else if let workspace = sidebarItem.workspace {
+                activeWorkspaceID = workspace.id
+                outlineView.reloadItem(SidebarSection.workspaces, reloadChildren: true)
+                outlineView.expandItem(SidebarSection.workspaces)
+                onLoadWorkspace?(workspace)
+            } else if sidebarItem.url == Self.airdropURL {
                 onAirDrop?()
             } else if sidebarItem.url == Self.recentsURL {
                 onShowRecents?()
@@ -362,10 +433,38 @@ extension SidebarViewController: NSOutlineViewDataSource {
 
     func outlineView(
         _ outlineView: NSOutlineView,
+        pasteboardWriterForItem item: Any
+    ) -> (any NSPasteboardWriting)? {
+        // Only allow dragging workspace items (not the section header, not "Save Workspace...")
+        guard let sidebarItem = item as? SidebarItem,
+              sidebarItem.section == .workspaces,
+              let workspace = sidebarItem.workspace else { return nil }
+
+        let pbItem = NSPasteboardItem()
+        pbItem.setString(workspace.id.uuidString, forType: .workspaceReorder)
+        return pbItem
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
         validateDrop info: NSDraggingInfo,
         proposedItem item: Any?,
         proposedChildIndex index: Int
     ) -> NSDragOperation {
+        // Workspace reorder: accept drops within the workspaces section
+        if info.draggingPasteboard.availableType(from: [.workspaceReorder]) != nil {
+            guard let section = item as? SidebarSection,
+                  section == .workspaces,
+                  index >= 0 else { return [] }
+
+            // Don't allow dropping after the "Save Workspace..." row
+            let workspaceCount = sectionItems[.workspaces]?.filter { $0.workspace != nil }.count ?? 0
+            guard index <= workspaceCount else { return [] }
+
+            return .move
+        }
+
+        // File URL drops
         guard let urls = info.draggingPasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -392,6 +491,50 @@ extension SidebarViewController: NSOutlineViewDataSource {
         item: Any?,
         childIndex index: Int
     ) -> Bool {
+        // Workspace reorder
+        if let pasteboardItem = info.draggingPasteboard.pasteboardItems?.first,
+           let idString = pasteboardItem.string(forType: .workspaceReorder),
+           let draggedID = UUID(uuidString: idString)
+        {
+            guard let items = sectionItems[.workspaces] else { return false }
+            let workspaceItems = items.filter { $0.workspace != nil }
+
+            guard let fromIndex = workspaceItems.firstIndex(where: { $0.workspace?.id == draggedID })
+            else { return false }
+
+            // Calculate the target index (adjust for the dragged item being removed)
+            var toIndex = index
+            if fromIndex < toIndex {
+                toIndex -= 1
+            }
+
+            // Reorder the workspace items
+            var reordered = workspaceItems
+            let moved = reordered.remove(at: fromIndex)
+            toIndex = min(toIndex, reordered.count)
+            reordered.insert(moved, at: toIndex)
+
+            // Update sortOrder on each workspace and save
+            for (i, sidebarItem) in reordered.enumerated() {
+                if var workspace = sidebarItem.workspace {
+                    workspace.sortOrder = i
+                    Task {
+                        await PersistenceService.shared.saveWorkspace(workspace)
+                    }
+                }
+            }
+
+            // Rebuild the section items (workspace items + Save Workspace action)
+            let actionItems = items.filter { $0.workspace == nil }
+            sectionItems[.workspaces] = reordered + actionItems
+
+            outlineView.reloadItem(SidebarSection.workspaces, reloadChildren: true)
+            outlineView.expandItem(SidebarSection.workspaces)
+
+            return true
+        }
+
+        // File URL drops
         guard
             let urls = info.draggingPasteboard.readObjects(
                 forClasses: [NSURL.self],
@@ -484,6 +627,15 @@ extension SidebarViewController: NSOutlineViewDelegate {
             }()
             textField.stringValue = sidebarItem.name
 
+            // Bold the active workspace name
+            if sidebarItem.section == .workspaces, let ws = sidebarItem.workspace,
+               ws.id == activeWorkspaceID
+            {
+                textField.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .bold)
+            } else {
+                textField.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            }
+
             // Show a status indicator for nearby peers.
             let statusDotID = "scoutdrop.statusDot"
             if let peer = sidebarItem.peer {
@@ -563,4 +715,10 @@ extension SidebarViewController: NSMenuDelegate {
         guard let item = sender.representedObject as? SidebarItem else { return }
         removeUserFavorite(url: item.url)
     }
+}
+
+// MARK: - Pasteboard Types
+
+private extension NSPasteboard.PasteboardType {
+    static let workspaceReorder = NSPasteboard.PasteboardType("com.scout.workspace.reorder")
 }

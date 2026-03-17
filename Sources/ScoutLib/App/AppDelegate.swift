@@ -559,7 +559,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let saveController = WorkspaceSaveWindowController { [weak self, weak wc] name in
             guard self != nil, let wc else { return }
             let state = wc.captureWindowState()
-            let workspace = Workspace(name: name, windowState: state)
+            let existingCount = PersistenceService.shared.listWorkspacesSync().count
+            var workspace = Workspace(name: name, windowState: state)
+            workspace.sortOrder = existingCount
             Task {
                 await PersistenceService.shared.saveWorkspace(workspace)
             }
@@ -576,7 +578,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 await PersistenceService.shared.saveWorkspace(updated)
             }
-            wc?.restoreWindowState(workspace.windowState)
+            wc?.restoreWindowState(workspace.windowState, restoreFrame: false)
         }
         workspaceManagerController = manager
         manager.showWindow(nil)
@@ -590,7 +592,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await PersistenceService.shared.saveWorkspace(updated)
         }
-        wc.restoreWindowState(workspace.windowState)
+        wc.restoreWindowState(workspace.windowState, restoreFrame: false)
     }
 
     // MARK: - Recent Folders Actions

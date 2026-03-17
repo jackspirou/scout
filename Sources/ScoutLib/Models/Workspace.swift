@@ -120,6 +120,7 @@ struct Workspace: Codable, Identifiable, Equatable {
     var pinnedPaths: [URL]
     let createdAt: Date
     var lastUsedAt: Date
+    var sortOrder: Int
 
     /// Alias used by PersistenceService for sort ordering.
     var updatedAt: Date {
@@ -137,7 +138,8 @@ struct Workspace: Codable, Identifiable, Equatable {
             rootPaths: [],
             pinnedPaths: [],
             createdAt: now,
-            lastUsedAt: now
+            lastUsedAt: now,
+            sortOrder: 0
         )
     }
 
@@ -148,7 +150,8 @@ struct Workspace: Codable, Identifiable, Equatable {
         rootPaths: [URL] = [],
         pinnedPaths: [URL] = [],
         createdAt: Date = Date(),
-        lastUsedAt: Date = Date()
+        lastUsedAt: Date = Date(),
+        sortOrder: Int = 0
     ) {
         self.id = id
         self.name = name
@@ -157,5 +160,18 @@ struct Workspace: Codable, Identifiable, Equatable {
         self.pinnedPaths = pinnedPaths
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
+        self.sortOrder = sortOrder
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        windowState = try container.decode(WindowState.self, forKey: .windowState)
+        rootPaths = try container.decode([URL].self, forKey: .rootPaths)
+        pinnedPaths = try container.decode([URL].self, forKey: .pinnedPaths)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        lastUsedAt = try container.decode(Date.self, forKey: .lastUsedAt)
+        sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
     }
 }

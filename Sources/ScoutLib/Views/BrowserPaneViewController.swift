@@ -142,7 +142,7 @@ final class BrowserPaneViewController: NSViewController {
 
     private func configureTabBar() {
         tabBar.orientation = .horizontal
-        tabBar.distribution = .fillProportionally
+        tabBar.distribution = .gravityAreas
         tabBar.spacing = 1
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         tabBar.wantsLayer = true
@@ -276,6 +276,7 @@ final class BrowserPaneViewController: NSViewController {
         tab.title = url.lastPathComponent
         tabs[activeTabIndex] = tab
 
+        rebuildTabBar()
         reloadCurrentTab()
 
         // Debounce recent locations save to avoid excessive UserDefaults writes
@@ -301,6 +302,7 @@ final class BrowserPaneViewController: NSViewController {
         tab.title = previousURL.lastPathComponent
         tabs[activeTabIndex] = tab
 
+        rebuildTabBar()
         reloadCurrentTab()
     }
 
@@ -315,6 +317,7 @@ final class BrowserPaneViewController: NSViewController {
         tab.title = nextURL.lastPathComponent
         tabs[activeTabIndex] = tab
 
+        rebuildTabBar()
         reloadCurrentTab()
     }
 
@@ -549,18 +552,40 @@ final class BrowserPaneViewController: NSViewController {
     private func rebuildTabBar() {
         tabBar.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
-        // Hide the tab bar when there's only one tab
-        let singleTab = tabs.count <= 1
-        tabBar.isHidden = singleTab
-        tabBarHeightConstraint?.constant = singleTab ? 0 : Layout.tabBarHeight
-        tabBar.layer?.backgroundColor = singleTab ? nil : NSColor.windowBackgroundColor.cgColor
-
-        guard !singleTab else { return }
+        // Always show the tab bar
+        tabBar.isHidden = false
+        tabBarHeightConstraint?.constant = Layout.tabBarHeight
+        tabBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         for (index, tab) in tabs.enumerated() {
             let button = makeTabButton(title: tab.title, index: index, isSelected: index == activeTabIndex)
             tabBar.addArrangedSubview(button)
         }
+
+        // Add "+" button at the end
+        let addButton = NSButton(
+            image: NSImage(systemSymbolName: "plus", accessibilityDescription: "New Tab")!,
+            target: self,
+            action: #selector(addTabClicked(_:))
+        )
+        addButton.isBordered = false
+        addButton.translatesAutoresizingMaskIntoConstraints = false
+        addButton.toolTip = "New Tab"
+
+        let addContainer = NSView()
+        addContainer.translatesAutoresizingMaskIntoConstraints = false
+        addContainer.addSubview(addButton)
+
+        NSLayoutConstraint.activate([
+            addButton.centerXAnchor.constraint(equalTo: addContainer.centerXAnchor),
+            addButton.centerYAnchor.constraint(equalTo: addContainer.centerYAnchor),
+            addButton.widthAnchor.constraint(equalToConstant: 20),
+            addButton.heightAnchor.constraint(equalToConstant: 20),
+            addContainer.widthAnchor.constraint(equalToConstant: 28),
+            addContainer.heightAnchor.constraint(equalToConstant: Layout.tabBarHeight - 4),
+        ])
+
+        tabBar.addArrangedSubview(addContainer)
     }
 
     private func makeTabButton(title: String, index: Int, isSelected: Bool) -> NSView {
@@ -622,6 +647,10 @@ final class BrowserPaneViewController: NSViewController {
 
     @objc private func closeTabClicked(_ sender: NSButton) {
         closeTab(at: sender.tag)
+    }
+
+    @objc private func addTabClicked(_ sender: Any?) {
+        addTab(url: currentURL())
     }
 
     // MARK: - Reload

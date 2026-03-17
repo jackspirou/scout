@@ -4,6 +4,7 @@ import Cocoa
 
 /// Sections displayed in the sidebar outline view.
 enum SidebarSection: String, CaseIterable {
+    case workspaces = "Workspaces"
     case favorites = "Favorites"
     case iCloud
     case nearby = "Nearby"
@@ -21,12 +22,26 @@ final class SidebarItem {
     let icon: NSImage
     let section: SidebarSection
     let peer: ScoutDropPeer?
+    let workspace: Workspace?
 
-    init(url: URL, name: String, icon: NSImage, section: SidebarSection, peer: ScoutDropPeer? = nil) {
+    /// Whether this item represents the "Save Workspace..." action row.
+    let isSaveWorkspaceAction: Bool
+
+    init(
+        url: URL,
+        name: String,
+        icon: NSImage,
+        section: SidebarSection,
+        peer: ScoutDropPeer? = nil,
+        workspace: Workspace? = nil,
+        isSaveWorkspaceAction: Bool = false
+    ) {
         self.url = url
         self.name = name
         self.icon = icon
         self.section = section
         self.peer = peer
+        self.workspace = workspace
+        self.isSaveWorkspaceAction = isSaveWorkspaceAction
     }
 }

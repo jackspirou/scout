@@ -163,7 +163,7 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
             }
         }
 
-        workspaces.sort { $0.updatedAt > $1.updatedAt }
+        workspaces.sort { $0.sortOrder < $1.sortOrder }
         return workspaces
     }
 
@@ -188,7 +188,7 @@ final class PersistenceService: PersistenceServiceProtocol, Sendable {
             }
         }
 
-        workspaces.sort { $0.updatedAt > $1.updatedAt }
+        workspaces.sort { $0.sortOrder < $1.sortOrder }
         return workspaces
     }
 

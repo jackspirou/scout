@@ -26,6 +26,7 @@ private extension NSToolbarItem.Identifier {
 
     static let viewMode = NSToolbarItem.Identifier("com.scout.toolbar.viewMode")
     static let searchField = NSToolbarItem.Identifier("com.scout.toolbar.search")
+    static let settings = NSToolbarItem.Identifier("com.scout.toolbar.settings")
     static let togglePreview = NSToolbarItem.Identifier("com.scout.toolbar.preview")
 }
 
@@ -227,6 +228,21 @@ final class MainWindowController: NSWindowController {
                     }
                 }
             }
+        }
+
+        // Wire sidebar workspace callbacks
+        sidebarViewController.onLoadWorkspace = { [weak self] workspace in
+            var updated = workspace
+            updated.lastUsedAt = Date()
+            Task {
+                await PersistenceService.shared.saveWorkspace(updated)
+            }
+            self?.restoreWindowState(workspace.windowState, restoreFrame: false)
+            self?.sidebarViewController.setActiveWorkspace(workspace)
+        }
+
+        sidebarViewController.onSaveWorkspace = { [weak self] in
+            NSApp.sendAction(NSSelectorFromString("handleSaveWorkspace:"), to: nil, from: self)
         }
 
         // Start ScoutDrop advertising and browsing
@@ -635,10 +651,13 @@ final class MainWindowController: NSWindowController {
         )
     }
 
-    /// Restores window state from a previous session.
-    func restoreWindowState(_ state: WindowState) {
-        // Restore window frame
-        if let frame = state.windowFrame {
+    /// Restores window state from a previous session or workspace.
+    /// When `restoreFrame` is true (default, used for session restore on launch),
+    /// the window position and size are restored. When false (used for workspace
+    /// switching), only the content is restored in the current window.
+    func restoreWindowState(_ state: WindowState, restoreFrame: Bool = true) {
+        // Restore window frame only on session restore, not workspace switch
+        if restoreFrame, let frame = state.windowFrame {
             let rect = NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
             window?.setFrame(rect, display: true)
         }
@@ -999,6 +1018,7 @@ extension MainWindowController: NSToolbarDelegate {
             .flexibleSpace,
             .viewMode,
             .searchField,
+            .settings,
             .togglePreview,
         ]
     }
@@ -1023,6 +1043,8 @@ extension MainWindowController: NSToolbarDelegate {
             return makeViewModeItem(identifier: itemIdentifier)
         case .searchField:
             return makeSearchItem(identifier: itemIdentifier)
+        case .settings:
+            return makeSettingsItem(identifier: itemIdentifier)
         case .togglePreview:
             return makePreviewItem(identifier: itemIdentifier)
         default:
@@ -1064,6 +1086,17 @@ extension MainWindowController: NSToolbarDelegate {
         item.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Forward")
         item.target = self
         item.action = #selector(forwardAction(_:))
+        return item
+    }
+
+    private func makeSettingsItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = "Settings"
+        item.paletteLabel = "Settings"
+        item.toolTip = "Open Settings"
+        item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")
+        item.target = self
+        item.action = #selector(settingsAction(_:))
         return item
     }
 
@@ -1127,6 +1160,11 @@ extension MainWindowController: NSToolbarDelegate {
 
     @objc private func togglePreviewAction(_ sender: Any?) {
         togglePreview()
+    }
+
+    @objc private func settingsAction(_ sender: Any?) {
+        // Walk the responder chain — AppDelegate handles "handleSettings:"
+        NSApp.sendAction(NSSelectorFromString("handleSettings:"), to: nil, from: sender)
     }
 }
 

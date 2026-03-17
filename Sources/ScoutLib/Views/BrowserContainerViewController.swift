@@ -75,9 +75,19 @@ final class BrowserContainerViewController: NSViewController {
         view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
 
-        configureSplitView()
-        addPanes()
-        layoutSplitView()
+        // Add the left pane directly to avoid NSSplitView hairline artifacts.
+        // The split view is only configured when dual pane mode is activated.
+        addChild(leftPane)
+        leftPane.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(leftPane.view)
+
+        NSLayoutConstraint.activate([
+            leftPane.view.topAnchor.constraint(equalTo: view.topAnchor),
+            leftPane.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            leftPane.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            leftPane.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+
         updateActiveIndicator()
     }
 
@@ -86,10 +96,6 @@ final class BrowserContainerViewController: NSViewController {
 
         leftPane.delegate = self
         rightPane.delegate = self
-
-        // Start in single-pane mode
-        rightPane.view.isHidden = true
-        splitView.adjustSubviews()
     }
 
     override func viewDidAppear() {
