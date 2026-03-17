@@ -152,14 +152,15 @@ jobs:
 
       - name: Generate changelog and commit docs
         run: |
-          git-cliff --output CHANGELOG.md
+          # Generate changelog from the full tag history (needs fetch-depth: 0)
+          git-cliff --output /tmp/CHANGELOG.md
+
+          # Switch to main branch — this resets the dirty working tree from the
+          # build (Info.plist version bump, etc.) back to the clean branch state.
+          # This is the canonical git-cliff commit-back pattern.
+          git checkout main
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp CHANGELOG.md /tmp/CHANGELOG.md
-          # Discard build-time modifications so git pull --rebase can proceed
-          git checkout -- CHANGELOG.md Sources/ScoutLib/Resources/Info.plist
-          git checkout main
-          git pull --rebase origin main
           cp /tmp/CHANGELOG.md CHANGELOG.md
           git add CHANGELOG.md
           git diff --cached --quiet || git commit -m "docs: update CHANGELOG.md for ${{ github.ref_name }}"
