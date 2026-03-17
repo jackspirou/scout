@@ -61,7 +61,7 @@ app: xcodegen ## Build the .app bundle with xcodebuild
 		build
 	@cp -R "$(BUILD_DIR)/DerivedData/Build/Products/Release/$(APP_NAME).app" "$(APP_BUNDLE)"
 	# Re-sign the entire bundle to ensure consistent team ID across all binaries
-	@codesign --force --deep --sign "$(CODESIGN_IDENTITY)" "$(APP_BUNDLE)"
+	@codesign --force --deep --sign "$(CODESIGN_IDENTITY)" --options=runtime --timestamp --entitlements "$(ENTITLEMENTS)" "$(APP_BUNDLE)"
 	@echo "==> $(APP_BUNDLE) is ready"
 
 # ------------------------------------------------------------------
