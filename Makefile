@@ -59,6 +59,8 @@ app: xcodegen ## Build the .app bundle with xcodebuild
 		CODE_SIGN_IDENTITY="$(CODESIGN_IDENTITY)" \
 		DEVELOPMENT_TEAM="$(TEAM_ID)" \
 		CODE_SIGN_STYLE=Manual \
+		ENABLE_HARDENED_RUNTIME=YES \
+		OTHER_CODE_SIGN_FLAGS="--options=runtime" \
 		-quiet \
 		build
 	@cp -R "$(BUILD_DIR)/DerivedData/Build/Products/Release/$(APP_NAME).app" "$(APP_BUNDLE)"
