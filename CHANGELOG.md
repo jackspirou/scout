@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Prompt for Full Disk Access on launch
+
+### Documentation
+
+- Add app screenshot and fix local app signing
+- Update CHANGELOG.md for v0.1.0-beta.9
+
+### Miscellaneous
+
+- Fix GitHub language stats showing 74% HTML
+- Improve build pipeline, fix CI/release issues, update README
+
 ## [0.1.0-beta.9] - 2026-03-17
 
 ### Fixed
