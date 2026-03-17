@@ -44,6 +44,9 @@ release:
 app: release
 	@echo "==> Assembling $(APP_BUNDLE)"
 
+	# Remove previous bundle to avoid codesign permission issues on overwrite
+	@rm -rf "$(APP_BUNDLE)"
+
 	# Create bundle directory structure
 	@mkdir -p "$(APP_MACOS)"
 	@mkdir -p "$(APP_RESOURCES)"
@@ -57,6 +60,12 @@ app: release
 
 	# Copy entitlements into Resources/
 	@cp "$(ENTITLEMENTS)" "$(APP_RESOURCES)/$(APP_NAME).entitlements"
+
+	# Copy SPM resource bundles (syntax highlighter themes, markdown template, etc.)
+	@for bundle in $$(find $$(dirname "$(RELEASE_BIN)") -name '*.bundle' -maxdepth 1); do \
+		echo "==> Copying $$(basename $$bundle)"; \
+		cp -R "$$bundle" "$(APP_RESOURCES)/"; \
+	done
 
 	# Compile Asset Catalog with actool (produces Assets.car with squircle-masked icon)
 	@echo "==> Compiling Asset Catalog"
