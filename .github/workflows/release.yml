@@ -69,3 +69,43 @@ jobs:
           files: |
             build/Scout.dmg
             Scout.app.zip
+
+      - name: Update Homebrew cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          SHA256=$(shasum -a 256 build/Scout.dmg | awk '{print $1}')
+
+          CASK=$(cat <<EOF
+          cask "scout" do
+            version "${VERSION}"
+            sha256 "${SHA256}"
+
+            url "https://github.com/jackspirou/scout/releases/download/v#{version}/Scout.dmg"
+            name "Scout"
+            desc "Native macOS file manager built with Swift and AppKit"
+            homepage "https://github.com/jackspirou/scout"
+
+            app "Scout.app"
+
+            zap trash: [
+              "~/Library/Application Support/Scout",
+              "~/Library/Preferences/com.jackspirou.scout.plist",
+            ]
+          end
+          EOF
+          )
+
+          # Get current file SHA for the update API call
+          FILE_SHA=$(gh api repos/jackspirou/homebrew-tap/contents/Casks/scout.rb --jq '.sha')
+
+          # Update the cask file in the homebrew-tap repo
+          echo "$CASK" | gh api repos/jackspirou/homebrew-tap/contents/Casks/scout.rb \
+            --method PUT \
+            --field message="chore: update Scout cask to ${VERSION}" \
+            --field content="$(echo "$CASK" | base64)" \
+            --field sha="$FILE_SHA" \
+            --silent
+        continue-on-error: true
