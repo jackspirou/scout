@@ -156,6 +156,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           cp CHANGELOG.md /tmp/CHANGELOG.md
+          # Discard build-time Info.plist version bump before switching branches
+          git checkout -- Sources/ScoutLib/Resources/Info.plist
           git checkout main
           git pull --rebase origin main
           cp /tmp/CHANGELOG.md CHANGELOG.md
