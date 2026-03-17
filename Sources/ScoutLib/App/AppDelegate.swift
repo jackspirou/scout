@@ -96,6 +96,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+
+        // Prompt for Full Disk Access if not already granted
+        FullDiskAccessService.shared.promptIfNeeded()
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
