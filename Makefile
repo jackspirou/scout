@@ -4,7 +4,6 @@
 
 # Variables
 APP_NAME       := Scout
-BUNDLE_ID      := com.jackspirou.scout
 BUILD_DIR      := build
 CODESIGN_IDENTITY ?= -
 TEAM_ID           ?=
@@ -12,19 +11,15 @@ TEAM_ID           ?=
 # Paths – source artifacts
 INFO_PLIST   := Sources/ScoutLib/Resources/Info.plist
 ENTITLEMENTS := Sources/ScoutLib/Resources/Scout.entitlements
-ICONSET_DIR  := Sources/ScoutLib/Resources/AppIcon.iconset
 
 # Paths – build artifacts
 APP_BUNDLE     := $(BUILD_DIR)/$(APP_NAME).app
-APP_CONTENTS   := $(APP_BUNDLE)/Contents
-APP_MACOS      := $(APP_CONTENTS)/MacOS
-APP_RESOURCES  := $(APP_CONTENTS)/Resources
 DMG_FILE       := $(BUILD_DIR)/$(APP_NAME).dmg
 
 # ------------------------------------------------------------------
 # Phony targets
 # ------------------------------------------------------------------
-.PHONY: build release xcodegen app dmg run clean install uninstall lint test version changelog screenshot
+.PHONY: build release xcodegen app dmg dmg-only run clean install uninstall lint test version changelog screenshot
 
 # ------------------------------------------------------------------
 # build (default) – debug build
@@ -71,6 +66,12 @@ app: xcodegen ## Build the .app bundle with xcodebuild
 # dmg – create a distributable disk image from the .app bundle
 # ------------------------------------------------------------------
 dmg: app
+	@$(MAKE) dmg-only CODESIGN_IDENTITY="$(CODESIGN_IDENTITY)"
+
+# ------------------------------------------------------------------
+# dmg-only – create a DMG from an existing .app (no rebuild)
+# ------------------------------------------------------------------
+dmg-only:
 	@echo "==> Creating $(DMG_FILE)"
 
 	# Clean up any previous DMG artefacts
@@ -87,8 +88,10 @@ dmg: app
 		-ov -format UDZO \
 		"$(DMG_FILE)"
 
-	# Sign the DMG (uses same identity as the app)
-	@codesign --force --sign "$(CODESIGN_IDENTITY)" --timestamp "$(DMG_FILE)" 2>/dev/null || true
+	# Sign the DMG (skip for ad-hoc identity)
+	@if [ "$(CODESIGN_IDENTITY)" != "-" ]; then \
+		codesign --force --sign "$(CODESIGN_IDENTITY)" --timestamp "$(DMG_FILE)"; \
+	fi
 
 	# Clean up
 	@rm -rf "$(BUILD_DIR)/dmg_tmp"

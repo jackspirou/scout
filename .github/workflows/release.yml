@@ -26,8 +26,8 @@ jobs:
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install dependencies
+        run: brew install --quiet xcodegen git-cliff
 
       - name: Show Swift version
         run: swift --version
@@ -72,8 +72,9 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | grep "$APPLE_TEAM_ID" | head -1 | sed 's/.*"\(.*\)".*/\1/')
           make app \
-            CODESIGN_IDENTITY="Developer ID Application: Jack Spirou ($APPLE_TEAM_ID)" \
+            CODESIGN_IDENTITY="$IDENTITY" \
             TEAM_ID="$APPLE_TEAM_ID"
 
       - name: Notarize app
@@ -109,11 +110,17 @@ jobs:
 
           rm build/Scout-notarize.zip
 
+      - name: Verify code signing
+        run: |
+          codesign --verify --deep --strict build/Scout.app
+          spctl --assess --type execute --verbose build/Scout.app
+
       - name: Create DMG
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          make dmg CODESIGN_IDENTITY="Developer ID Application: Jack Spirou ($APPLE_TEAM_ID)"
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | grep "$APPLE_TEAM_ID" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          make dmg-only CODESIGN_IDENTITY="$IDENTITY"
 
       - name: Notarize DMG
         env:
@@ -145,13 +152,16 @@ jobs:
 
       - name: Generate changelog and commit docs
         run: |
-          brew install git-cliff
           git-cliff --output CHANGELOG.md
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp CHANGELOG.md /tmp/CHANGELOG.md
+          git checkout main
+          git pull --rebase origin main
+          cp /tmp/CHANGELOG.md CHANGELOG.md
           git add CHANGELOG.md
-          git commit -m "docs: update CHANGELOG.md for ${{ github.ref_name }}" || true
-          git push origin HEAD:main || true
+          git diff --cached --quiet || git commit -m "docs: update CHANGELOG.md for ${{ github.ref_name }}"
+          git push origin main
 
       - name: Determine prerelease
         id: prerelease
@@ -212,3 +222,8 @@ jobs:
             --field sha="$FILE_SHA" \
             --silent
         continue-on-error: true
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
