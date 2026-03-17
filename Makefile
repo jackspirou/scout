@@ -87,6 +87,9 @@ dmg: app
 		-ov -format UDZO \
 		"$(DMG_FILE)"
 
+	# Sign the DMG (uses same identity as the app)
+	@codesign --force --sign "$(CODESIGN_IDENTITY)" --timestamp "$(DMG_FILE)" 2>/dev/null || true
+
 	# Clean up
 	@rm -rf "$(BUILD_DIR)/dmg_tmp"
 
