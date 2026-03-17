@@ -25,9 +25,9 @@ guard FileManager.default.fileExists(atPath: appPath) else {
     exit(1)
 }
 
-// ------------------------------------------------------------------
-// 2. Ensure docs/ directory exists
-// ------------------------------------------------------------------
+/// ------------------------------------------------------------------
+/// 2. Ensure docs/ directory exists
+/// ------------------------------------------------------------------
 let docsDir = (outputPath as NSString).deletingLastPathComponent
 if !FileManager.default.fileExists(atPath: docsDir) {
     do {
@@ -41,9 +41,9 @@ if !FileManager.default.fileExists(atPath: docsDir) {
     }
 }
 
-// ------------------------------------------------------------------
-// 3. Launch the app
-// ------------------------------------------------------------------
+/// ------------------------------------------------------------------
+/// 3. Launch the app
+/// ------------------------------------------------------------------
 let launchProcess = Process()
 launchProcess.executableURL = URL(fileURLWithPath: "/usr/bin/open")
 launchProcess.arguments = [appPath]
