@@ -17,14 +17,12 @@ APP_BUNDLE     := $(BUILD_DIR)/$(APP_NAME).app
 APP_CONTENTS   := $(APP_BUNDLE)/Contents
 APP_MACOS      := $(APP_CONTENTS)/MacOS
 APP_RESOURCES  := $(APP_CONTENTS)/Resources
-RELEASE_BIN    := $(shell swift build -c release --show-bin-path 2>/dev/null)/$(APP_NAME)
-DEBUG_BIN      := $(shell swift build --show-bin-path 2>/dev/null)/$(APP_NAME)
 DMG_FILE       := $(BUILD_DIR)/$(APP_NAME).dmg
 
 # ------------------------------------------------------------------
 # Phony targets
 # ------------------------------------------------------------------
-.PHONY: build release app dmg run clean install uninstall lint test version changelog screenshot
+.PHONY: build release xcodegen app dmg run clean install uninstall lint test version changelog screenshot
 
 # ------------------------------------------------------------------
 # build (default) – debug build
@@ -39,48 +37,26 @@ release:
 	swift build -c release
 
 # ------------------------------------------------------------------
-# app – assemble a proper macOS .app bundle from the release binary
+# xcodegen – generate the Xcode project from project.yml
 # ------------------------------------------------------------------
-app: release
-	@echo "==> Assembling $(APP_BUNDLE)"
+xcodegen: ## Generate the Xcode project from project.yml
+	xcodegen generate
 
-	# Remove previous bundle to avoid codesign permission issues on overwrite
+# ------------------------------------------------------------------
+# app – build the .app bundle with xcodebuild
+# ------------------------------------------------------------------
+app: xcodegen ## Build the .app bundle with xcodebuild
+	@echo "==> Building $(APP_NAME).app with xcodebuild"
 	@rm -rf "$(APP_BUNDLE)"
-
-	# Create bundle directory structure
-	@mkdir -p "$(APP_MACOS)"
-	@mkdir -p "$(APP_RESOURCES)"
-
-	# Copy the release binary
-	@cp "$(RELEASE_BIN)" "$(APP_MACOS)/$(APP_NAME)"
-
-	# Copy Info.plist into Contents/ and create PkgInfo
-	@cp "$(INFO_PLIST)" "$(APP_CONTENTS)/Info.plist"
-	@printf 'APPL????' > "$(APP_CONTENTS)/PkgInfo"
-
-	# Copy entitlements into Resources/
-	@cp "$(ENTITLEMENTS)" "$(APP_RESOURCES)/$(APP_NAME).entitlements"
-
-	# Copy SPM resource bundles (syntax highlighter themes, markdown template, etc.)
-	@for bundle in $$(find $$(dirname "$(RELEASE_BIN)") -name '*.bundle' -maxdepth 1); do \
-		echo "==> Copying $$(basename $$bundle)"; \
-		cp -R "$$bundle" "$(APP_RESOURCES)/"; \
-	done
-
-	# Compile Asset Catalog with actool (produces Assets.car with squircle-masked icon)
-	@echo "==> Compiling Asset Catalog"
-	@/Applications/Xcode.app/Contents/Developer/usr/bin/actool \
-		Sources/ScoutLib/Resources/Assets.xcassets \
-		--compile "$(APP_RESOURCES)" \
-		--platform macosx \
-		--minimum-deployment-target 14.0 \
-		--app-icon AppIcon \
-		--output-partial-info-plist /dev/null 2>/dev/null
-
-	# Ad-hoc code sign the bundle (seals Resources + binds Info.plist)
-	@echo "==> Code signing $(APP_BUNDLE)"
-	@codesign --force --deep --sign - "$(APP_BUNDLE)"
-
+	@xcodebuild -project Scout.xcodeproj \
+		-scheme Scout \
+		-configuration Release \
+		-derivedDataPath "$(BUILD_DIR)/DerivedData" \
+		ARCHS="arm64 x86_64" \
+		ONLY_ACTIVE_ARCH=NO \
+		-quiet \
+		build
+	@cp -R "$(BUILD_DIR)/DerivedData/Build/Products/Release/$(APP_NAME).app" "$(APP_BUNDLE)"
 	@echo "==> $(APP_BUNDLE) is ready"
 
 # ------------------------------------------------------------------
@@ -112,14 +88,14 @@ dmg: app
 # run – build debug and launch the executable
 # ------------------------------------------------------------------
 run: build
-	"$(DEBUG_BIN)"
+	"$$(swift build --show-bin-path)/$(APP_NAME)"
 
 # ------------------------------------------------------------------
 # clean – remove all build artefacts
 # ------------------------------------------------------------------
 clean:
 	@echo "==> Cleaning build artefacts"
-	@rm -rf .build $(BUILD_DIR)
+	@rm -rf .build $(BUILD_DIR) Scout.xcodeproj
 
 # ------------------------------------------------------------------
 # install – copy the .app bundle to /Applications

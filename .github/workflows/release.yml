@@ -22,14 +22,25 @@ jobs:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
+            build/DerivedData/SourcePackages
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
 
       - name: Show Swift version
         run: swift --version
 
       - name: Test
         run: swift test
+
+      - name: Set version from tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Sources/ScoutLib/Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Sources/ScoutLib/Resources/Info.plist
 
       - name: Build .app bundle
         run: make app
@@ -78,7 +89,7 @@ jobs:
           VERSION="${TAG#v}"
           SHA256=$(shasum -a 256 build/Scout.dmg | awk '{print $1}')
 
-          CASK=$(cat <<EOF
+          cat > /tmp/scout.rb << CASKEOF
           cask "scout" do
             version "${VERSION}"
             sha256 "${SHA256}"
@@ -95,17 +106,17 @@ jobs:
               "~/Library/Preferences/com.jackspirou.scout.plist",
             ]
           end
-          EOF
-          )
+          CASKEOF
 
-          # Get current file SHA for the update API call
+          # Strip leading whitespace from heredoc
+          sed -i '' 's/^          //' /tmp/scout.rb
+
           FILE_SHA=$(gh api repos/jackspirou/homebrew-tap/contents/Casks/scout.rb --jq '.sha')
 
-          # Update the cask file in the homebrew-tap repo
-          echo "$CASK" | gh api repos/jackspirou/homebrew-tap/contents/Casks/scout.rb \
+          gh api repos/jackspirou/homebrew-tap/contents/Casks/scout.rb \
             --method PUT \
             --field message="chore: update Scout cask to ${VERSION}" \
-            --field content="$(echo "$CASK" | base64)" \
+            --field content="$(base64 -i /tmp/scout.rb)" \
             --field sha="$FILE_SHA" \
             --silent
         continue-on-error: true

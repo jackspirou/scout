@@ -3,3 +3,4 @@
 --self remove
 --stripunusedargs closure-only
 --maxwidth 120
+--exclude build,Scout.xcodeproj

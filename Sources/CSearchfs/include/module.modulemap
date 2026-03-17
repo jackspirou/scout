@@ -1,0 +1,4 @@
+module CSearchfs {
+    header "csearchfs.h"
+    export *
+}

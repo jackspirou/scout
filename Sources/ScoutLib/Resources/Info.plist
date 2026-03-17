@@ -24,9 +24,7 @@
     <string>AppIcon</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
-    <key>NSMainNibFile</key>
-    <string></string>
-    <key>LSApplicationCategoryType</key>
+<key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key>
     <true/>

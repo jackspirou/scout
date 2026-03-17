@@ -43,3 +43,9 @@ jobs:
 
       - name: Build release
         run: swift build -c release
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build .app bundle
+        run: make app

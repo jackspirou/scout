@@ -334,7 +334,7 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
 
     private func loadMarkdownPreview(content: String) {
         if !templateLoaded {
-            guard let templateURL = Bundle.module.url(forResource: "markdown-template", withExtension: "html"),
+            guard let templateURL = Bundle.scoutResources.url(forResource: "markdown-template", withExtension: "html"),
                   let html = try? String(contentsOf: templateURL, encoding: .utf8) else { return }
             // Store content to inject after template finishes loading (via didFinishNavigation).
             pendingMarkdownContent = content
@@ -362,7 +362,7 @@ final class TextFilePreviewViewController: NSViewController, PreviewChild {
         // Reuse the markdown template which already bundles mermaid.js.
         // Instead of calling renderMarkdown(), we inject the mermaid source
         // directly into a <div class="mermaid"> and trigger mermaid.run().
-        guard let templateURL = Bundle.module.url(forResource: "markdown-template", withExtension: "html"),
+        guard let templateURL = Bundle.scoutResources.url(forResource: "markdown-template", withExtension: "html"),
               let html = try? String(contentsOf: templateURL, encoding: .utf8) else { return }
 
         // Load template, then inject mermaid content after it finishes loading.
