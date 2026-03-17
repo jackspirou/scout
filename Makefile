@@ -3,9 +3,10 @@
 # ------------------------------------------------------------------
 
 # Variables
-APP_NAME   := Scout
-BUNDLE_ID  := com.jackspirou.scout
-BUILD_DIR  := build
+APP_NAME       := Scout
+BUNDLE_ID      := com.jackspirou.scout
+BUILD_DIR      := build
+CODESIGN_IDENTITY ?= -
 
 # Paths – source artifacts
 INFO_PLIST   := Sources/ScoutLib/Resources/Info.plist
@@ -54,6 +55,7 @@ app: xcodegen ## Build the .app bundle with xcodebuild
 		-derivedDataPath "$(BUILD_DIR)/DerivedData" \
 		ARCHS="arm64 x86_64" \
 		ONLY_ACTIVE_ARCH=NO \
+		CODE_SIGN_IDENTITY="$(CODESIGN_IDENTITY)" \
 		-quiet \
 		build
 	@cp -R "$(BUILD_DIR)/DerivedData/Build/Products/Release/$(APP_NAME).app" "$(APP_BUNDLE)"
