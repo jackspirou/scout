@@ -69,8 +69,12 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
 
       - name: Build .app bundle
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          make app CODESIGN_IDENTITY="Developer ID Application: Jack Spirou (244SS6JJ8Q)"
+          make app \
+            CODESIGN_IDENTITY="Developer ID Application: Jack Spirou ($APPLE_TEAM_ID)" \
+            TEAM_ID="$APPLE_TEAM_ID"
 
       - name: Notarize app
         env:
