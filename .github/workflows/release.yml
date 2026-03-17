@@ -156,8 +156,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           cp CHANGELOG.md /tmp/CHANGELOG.md
-          # Discard all build-time modifications (Info.plist version bump, etc.)
-          git checkout -- .
+          # Discard build-time modifications so git pull --rebase can proceed
+          git checkout -- CHANGELOG.md Sources/ScoutLib/Resources/Info.plist
           git checkout main
           git pull --rebase origin main
           cp /tmp/CHANGELOG.md CHANGELOG.md
