@@ -1,0 +1,2 @@
+# Mark generated/vendored resources so GitHub language stats show Swift
+Sources/ScoutLib/Resources/markdown-template.html linguist-vendored
