@@ -13,7 +13,7 @@ packages:
 targets:
   CSearchfs:
     type: library.static
-    platform: macOS
+    supportedDestinations: [macOS]
     sources:
       - path: Sources/CSearchfs
     settings:
@@ -24,7 +24,7 @@ targets:
 
   ScoutLib:
     type: framework
-    platform: macOS
+    supportedDestinations: [macOS]
     sources:
       - path: Sources/ScoutLib
         excludes:
@@ -52,7 +52,7 @@ targets:
 
   Scout:
     type: application
-    platform: macOS
+    supportedDestinations: [macOS]
     sources:
       - path: Sources/Scout
     resources:
@@ -71,3 +71,13 @@ targets:
     dependencies:
       - target: ScoutLib
         embed: true
+
+schemes:
+  Scout:
+    build:
+      targets:
+        Scout: all
+    run:
+      config: Debug
+    archive:
+      config: Release

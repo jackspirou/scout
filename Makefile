@@ -48,6 +48,7 @@ app: xcodegen ## Build the .app bundle with xcodebuild
 	@xcodebuild -project Scout.xcodeproj \
 		-scheme Scout \
 		-configuration Release \
+		-destination 'generic/platform=macOS' \
 		-derivedDataPath "$(BUILD_DIR)/DerivedData" \
 		ARCHS="arm64 x86_64" \
 		ONLY_ACTIVE_ARCH=NO \
