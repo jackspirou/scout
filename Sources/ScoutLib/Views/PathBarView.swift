@@ -179,15 +179,17 @@ final class PathBarView: NSView {
         container.spacing = 3
         container.alignment = .centerY
 
-        // Folder icon
-        let icon = NSImageView()
-        let resolved = FileTypeResolver.resolve(url: url, isDirectory: true, systemKind: nil, iconStyle: iconStyle)
-        icon.image = resolved.icon
-        icon.imageScaling = .scaleProportionallyDown
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.widthAnchor.constraint(equalToConstant: Layout.iconSize).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: Layout.iconSize).isActive = true
-        container.addArrangedSubview(icon)
+        // Only show icon for the current (last) directory
+        if isLast {
+            let icon = NSImageView()
+            let resolved = FileTypeResolver.resolve(url: url, isDirectory: true, systemKind: nil, iconStyle: iconStyle)
+            icon.image = resolved.icon
+            icon.imageScaling = .scaleProportionallyDown
+            icon.translatesAutoresizingMaskIntoConstraints = false
+            icon.widthAnchor.constraint(equalToConstant: Layout.iconSize).isActive = true
+            icon.heightAnchor.constraint(equalToConstant: Layout.iconSize).isActive = true
+            container.addArrangedSubview(icon)
+        }
 
         // Name button
         let button = PathComponentButton(title: name, url: url)

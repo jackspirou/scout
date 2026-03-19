@@ -12,7 +12,7 @@ enum SearchScope {
 // MARK: - SearchFilter
 
 enum SearchFilter {
-    case kind(String)
+    case kind([String])
     case sizeGreaterThan(Int64)
     case sizeLessThan(Int64)
     case modifiedAfter(Date)
@@ -237,9 +237,16 @@ actor SearchService: SearchServiceProtocol {
 
         for filter in filters {
             switch filter {
-            case let .kind(kind):
-                let escaped = kind.replacingOccurrences(of: "'", with: "\\'")
-                queryParts.append("kMDItemContentType == '\(escaped)'")
+            case let .kind(kinds):
+                let kindClauses = kinds.map { kind in
+                    let escaped = kind.replacingOccurrences(of: "'", with: "\\'")
+                    return "kMDItemContentType == '\(escaped)'"
+                }
+                if kindClauses.count == 1 {
+                    queryParts.append(kindClauses[0])
+                } else {
+                    queryParts.append("(\(kindClauses.joined(separator: " || ")))")
+                }
 
             case let .sizeGreaterThan(size):
                 queryParts.append("kMDItemFSSize > \(size)")
