@@ -47,6 +47,14 @@ final class FileListViewController: NSViewController {
     private var sortedItems: [FileItem] = []
     private var urlToIndex: [URL: Int] = [:]
 
+    // Grouped search results
+    private var searchGroups: [SearchResultGroup] = []
+    private var searchDisplayRows: [SearchDisplayRow] = []
+    private var isGroupedSearchMode: Bool = false
+
+    /// Callback invoked when a group header is clicked to navigate to that directory.
+    var onNavigateToDirectory: ((URL) -> Void)?
+
     private var currentSortField: SortField = .name
     private var sortAscending: Bool = true
     private var filterQuery: String = ""
@@ -311,6 +319,7 @@ final class FileListViewController: NSViewController {
         renameClickTimer?.invalidate()
         renameClickTimer = nil
         previouslySelectedRow = -1
+        exitGroupedSearchMode()
 
         currentDirectoryURL = url
         filterQuery = ""
@@ -346,11 +355,24 @@ final class FileListViewController: NSViewController {
         filterQuery = "" // Search results are already filtered; don't apply local filter on top.
         allItems = items
         sortItems()
+
+        // Build grouped display
+        isGroupedSearchMode = true
+        searchGroups = SearchResultGroup.group(sortedItems)
+        searchDisplayRows = SearchResultGroup.flatten(searchGroups)
+
         tableView.reloadData()
         if isFirstBatch {
             tableView.scrollRowToVisible(0)
         }
         delegate?.fileListViewDidFinishLoading(self, itemCount: sortedItems.count)
+    }
+
+    /// Exits grouped search mode (called when navigating away from search results).
+    private func exitGroupedSearchMode() {
+        isGroupedSearchMode = false
+        searchGroups = []
+        searchDisplayRows = []
     }
 
     /// Updates the icon style and reloads the current directory if one is loaded.
@@ -373,6 +395,16 @@ final class FileListViewController: NSViewController {
     /// Opens the currently selected item (used by keyboard navigation).
     func openSelectedItem() {
         let selectedRow = tableView.selectedRow
+        if isGroupedSearchMode {
+            guard searchDisplayRows.indices.contains(selectedRow) else { return }
+            if case let .header(groupIndex) = searchDisplayRows[selectedRow] {
+                onNavigateToDirectory?(searchGroups[groupIndex].directory)
+                return
+            }
+            guard let item = searchDisplayRows[selectedRow].fileItem else { return }
+            delegate?.fileListView(self, didOpenItem: item)
+            return
+        }
         guard sortedItems.indices.contains(selectedRow) else { return }
         delegate?.fileListView(self, didOpenItem: sortedItems[selectedRow])
     }
@@ -870,6 +902,74 @@ final class FileListViewController: NSViewController {
         newFolder(sender)
     }
 
+    // MARK: - Search Group Headers
+
+    private func makeGroupHeaderView(for group: SearchResultGroup, at groupIndex: Int) -> NSView {
+        let headerID = NSUserInterfaceItemIdentifier("SearchGroupHeader")
+        let cell = tableView.makeView(withIdentifier: headerID, owner: self) ?? NSView()
+        cell.identifier = headerID
+        cell.subviews.forEach { $0.removeFromSuperview() }
+
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.spacing = 6
+        stack.alignment = .centerY
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+            stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+
+        // Chevron
+        let chevron = NSTextField(labelWithString: group.isCollapsed ? "\u{25B6}" : "\u{25BC}")
+        chevron.font = NSFont.systemFont(ofSize: 9)
+        chevron.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(chevron)
+
+        // Folder icon
+        let icon = NSImageView()
+        icon.image = NSWorkspace.shared.icon(for: .folder)
+        icon.image?.size = NSSize(width: 16, height: 16)
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        stack.addArrangedSubview(icon)
+
+        // Directory name (bold)
+        let nameLabel = NSTextField(labelWithString: group.directoryName)
+        nameLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        nameLabel.textColor = .labelColor
+        stack.addArrangedSubview(nameLabel)
+
+        // Full path (dimmed)
+        let pathLabel = NSTextField(labelWithString: group.directoryPath)
+        pathLabel.font = NSFont.systemFont(ofSize: 11)
+        pathLabel.textColor = .tertiaryLabelColor
+        pathLabel.lineBreakMode = .byTruncatingMiddle
+        pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        stack.addArrangedSubview(pathLabel)
+
+        // Item count
+        let countLabel = NSTextField(labelWithString: "(\(group.items.count))")
+        countLabel.font = NSFont.systemFont(ofSize: 11)
+        countLabel.textColor = .secondaryLabelColor
+        countLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        stack.addArrangedSubview(countLabel)
+
+        return cell
+    }
+
+    @objc private func toggleGroupCollapse(_ sender: NSButton) {
+        let groupIndex = sender.tag
+        guard searchGroups.indices.contains(groupIndex) else { return }
+        searchGroups[groupIndex].isCollapsed.toggle()
+        searchDisplayRows = SearchResultGroup.flatten(searchGroups)
+        tableView.reloadData()
+    }
+
     // MARK: - Header Context Menu (Show/Hide Columns)
 
     /// All columns available for show/hide, mapped from SortField to column identifier and display title.
@@ -979,7 +1079,13 @@ final class FileListViewController: NSViewController {
     }
 
     func selectedItems() -> [FileItem] {
-        tableView.selectedRowIndexes.compactMap { index in
+        if isGroupedSearchMode {
+            return tableView.selectedRowIndexes.compactMap { index in
+                guard searchDisplayRows.indices.contains(index) else { return nil }
+                return searchDisplayRows[index].fileItem
+            }
+        }
+        return tableView.selectedRowIndexes.compactMap { index in
             sortedItems.indices.contains(index) ? sortedItems[index] : nil
         }
     }
@@ -1049,7 +1155,7 @@ final class FileListViewController: NSViewController {
 
 extension FileListViewController: NSTableViewDataSource {
     func numberOfRows(in tableView: NSTableView) -> Int {
-        sortedItems.count
+        isGroupedSearchMode ? searchDisplayRows.count : sortedItems.count
     }
 
     func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
@@ -1070,6 +1176,12 @@ extension FileListViewController: NSTableViewDataSource {
         _ tableView: NSTableView,
         pasteboardWriterForRow row: Int
     ) -> (any NSPasteboardWriting)? {
+        if isGroupedSearchMode {
+            guard searchDisplayRows.indices.contains(row),
+                  let item = searchDisplayRows[row].fileItem
+            else { return nil }
+            return item.url as NSURL
+        }
         guard sortedItems.indices.contains(row) else { return nil }
         return sortedItems[row].url as NSURL
     }
@@ -1140,9 +1252,32 @@ extension FileListViewController: NSTableViewDataSource {
 // MARK: - NSTableViewDelegate
 
 extension FileListViewController: NSTableViewDelegate {
+    func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
+        guard isGroupedSearchMode, searchDisplayRows.indices.contains(row) else { return false }
+        return searchDisplayRows[row].isHeader
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard let column = tableColumn, sortedItems.indices.contains(row) else { return nil }
-        let item = sortedItems[row]
+        // Handle group header rows
+        if isGroupedSearchMode, searchDisplayRows.indices.contains(row),
+           case let .header(groupIndex) = searchDisplayRows[row]
+        {
+            return makeGroupHeaderView(for: searchGroups[groupIndex], at: groupIndex)
+        }
+
+        // Resolve the file item for this row
+        let item: FileItem
+        if isGroupedSearchMode {
+            guard searchDisplayRows.indices.contains(row),
+                  let fileItem = searchDisplayRows[row].fileItem
+            else { return nil }
+            item = fileItem
+        } else {
+            guard sortedItems.indices.contains(row) else { return nil }
+            item = sortedItems[row]
+        }
+
+        guard let column = tableColumn else { return nil }
 
         let cellIdentifier = column.identifier
         let cell: NSTableCellView
@@ -1277,6 +1412,20 @@ extension FileListViewController: NSTableViewDelegate {
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
+        // Handle group header clicks in grouped search mode
+        if isGroupedSearchMode {
+            let selectedRow = tableView.selectedRow
+            if searchDisplayRows.indices.contains(selectedRow),
+               case let .header(groupIndex) = searchDisplayRows[selectedRow]
+            {
+                // Toggle collapse on single click
+                searchGroups[groupIndex].isCollapsed.toggle()
+                searchDisplayRows = SearchResultGroup.flatten(searchGroups)
+                tableView.reloadData()
+                return
+            }
+        }
+
         // Cancel pending rename if selection changed (e.g. arrow keys)
         if tableView.selectedRow != previouslySelectedRow {
             renameClickTimer?.invalidate()
