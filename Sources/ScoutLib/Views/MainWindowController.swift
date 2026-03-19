@@ -81,9 +81,6 @@ final class MainWindowController: NSWindowController {
     private var scoutDropVerificationTask: Task<Void, Never>?
     private var isSearchActive = false
     private var preSearchURL: URL?
-    private var searchScopeBar: NSView?
-    private var searchScopeSegment: NSSegmentedControl?
-    private var searchScopeBarBottomConstraint: NSLayoutConstraint?
     private var activeFilters: [SearchFilter] = []
     private var activeDisplayTokens: [SearchFilterToken.DisplayToken] = []
 
@@ -385,7 +382,6 @@ final class MainWindowController: NSWindowController {
         // currentURL() returns the tab's URL which persists through searches.
         preSearchURL = browserContainer.activePaneController().currentURL()
         isSearchActive = true
-        showScopeBar(true)
 
         // Clear the local filter so search results aren't further filtered
         // by the text in the search field (Spotlight already handles the query).
@@ -393,17 +389,9 @@ final class MainWindowController: NSWindowController {
 
         searchTask?.cancel()
 
-        let scope: SearchScope
-        switch searchScopeSegment?.selectedSegment {
-        case 0:
-            let currentURL = preSearchURL ?? browserContainer.activePaneController().currentURL()
-            scope = .subfolder(currentURL)
-        case 2:
-            scope = .fullDisk
-        default:
-            // Segment 1 (user home folder) is the default.
-            scope = .subfolder(FileManager.default.homeDirectoryForCurrentUser)
-        }
+        // Always search from the current folder
+        let currentURL = preSearchURL ?? browserContainer.activePaneController().currentURL()
+        let scope: SearchScope = .subfolder(currentURL)
 
         browserContainer.activePaneController().setSearchInProgress(true)
 
@@ -564,15 +552,38 @@ final class MainWindowController: NSWindowController {
         return await Task.detached {
             var items: [FileItem] = []
             let fm = FileManager.default
+
+            // Pass 1: Scan immediate children first so top-level matches
+            // (e.g. "Music" in ~/) are always found before the cap is hit.
+            if let contents = try? fm.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.nameKey, .isDirectoryKey],
+                options: []
+            ) {
+                for url in contents {
+                    if Task.isCancelled { break }
+                    let name = url.lastPathComponent
+                    if GlobPattern.matches(name, regex: regex) {
+                        if let item = FileItem.create(from: url, iconStyle: .system) {
+                            items.append(item)
+                        }
+                    }
+                }
+            }
+
+            // Pass 2: Recurse into subdirectories for deeper matches.
             guard let enumerator = fm.enumerator(
                 at: directory,
                 includingPropertiesForKeys: [.nameKey, .isDirectoryKey],
                 options: [.skipsPackageDescendants]
             ) else { return items }
 
+            let topLevelURLs = Set(items.map(\.url))
             while let obj = enumerator.nextObject() {
                 if Task.isCancelled { break }
                 guard let url = obj as? URL else { continue }
+                // Skip items already found in pass 1
+                if topLevelURLs.contains(url) { continue }
                 let name = url.lastPathComponent
                 if GlobPattern.matches(name, regex: regex) {
                     if let item = FileItem.create(from: url, iconStyle: .system) {
@@ -593,22 +604,36 @@ final class MainWindowController: NSWindowController {
         return await Task.detached {
             var items: [FileItem] = []
             let fm = FileManager.default
+            let resourceKeys: [URLResourceKey] = [.contentTypeKey, .fileSizeKey, .contentModificationDateKey, .tagNamesKey, .isDirectoryKey]
+
+            // Pass 1: Immediate children first
+            if let contents = try? fm.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: resourceKeys, options: []
+            ) {
+                for url in contents {
+                    if Task.isCancelled { break }
+                    guard let item = FileItem.create(from: url, iconStyle: .system) else { continue }
+                    if filters.allSatisfy({ $0.matches(item) }) {
+                        items.append(item)
+                    }
+                }
+            }
+
+            // Pass 2: Recurse for deeper matches
             guard let enumerator = fm.enumerator(
-                at: directory,
-                includingPropertiesForKeys: [.contentTypeKey, .fileSizeKey, .contentModificationDateKey, .tagNamesKey, .isDirectoryKey],
+                at: directory, includingPropertiesForKeys: resourceKeys,
                 options: [.skipsPackageDescendants]
             ) else { return items }
 
+            let topLevelURLs = Set(items.map(\.url))
             while let obj = enumerator.nextObject() {
                 if Task.isCancelled { break }
-                guard let url = obj as? URL,
-                      let item = FileItem.create(from: url, iconStyle: .system)
-                else { continue }
-
+                guard let url = obj as? URL else { continue }
+                if topLevelURLs.contains(url) { continue }
+                guard let item = FileItem.create(from: url, iconStyle: .system) else { continue }
                 if filters.allSatisfy({ $0.matches(item) }) {
                     items.append(item)
                 }
-                // Cap at 1000 matching results
                 if items.count >= 1000 { break }
             }
             return items
@@ -631,73 +656,10 @@ final class MainWindowController: NSWindowController {
         activeFilters = []
         activeDisplayTokens = []
         browserContainer.setFilterQuery("")
-        showScopeBar(false)
     }
 
     /// No-op — tokens are now shown in the tab title, not a separate bar.
     private func updateTokenBar() {}
-
-    /// Shows or hides the search scope bar.
-    private func showScopeBar(_ show: Bool) {
-        if show {
-            if searchScopeBar == nil {
-                configureScopeBar()
-            }
-            searchScopeBar?.isHidden = false
-        } else {
-            searchScopeBar?.isHidden = true
-        }
-    }
-
-    private func configureScopeBar() {
-        let containerView = contentController.view
-
-        let bar = NSView()
-        bar.translatesAutoresizingMaskIntoConstraints = false
-        bar.wantsLayer = true
-
-        let homeURL = FileManager.default.homeDirectoryForCurrentUser
-        let homeName = homeURL.lastPathComponent
-
-        let segment = NSSegmentedControl(
-            labels: ["Current Folder", homeName, "This Mac"],
-            trackingMode: .selectOne,
-            target: self,
-            action: #selector(searchScopeChanged(_:))
-        )
-        segment.selectedSegment = 0
-        segment.translatesAutoresizingMaskIntoConstraints = false
-        segment.controlSize = .small
-        segment.segmentStyle = .capsule
-
-        // Show a folder icon on the user home segment.
-        let folderIcon = NSWorkspace.shared.icon(for: .folder)
-        folderIcon.size = NSSize(width: 14, height: 14)
-        segment.setImage(folderIcon, forSegment: 1)
-        segment.setImageScaling(.scaleProportionallyDown, forSegment: 1)
-
-        bar.addSubview(segment)
-        searchScopeSegment = segment
-
-        containerView.addSubview(bar, positioned: .above, relativeTo: nil)
-
-        NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: containerView.topAnchor),
-            bar.leadingAnchor.constraint(equalTo: splitView.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            bar.heightAnchor.constraint(equalToConstant: 28),
-
-            segment.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
-            segment.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-        ])
-
-        searchScopeBar = bar
-    }
-
-    @objc private func searchScopeChanged(_ sender: NSSegmentedControl) {
-        guard let query = searchField?.stringValue, !query.isEmpty else { return }
-        executeSearch(query: query)
-    }
 
     /// Toggles sidebar visibility.
     func toggleSidebar() {

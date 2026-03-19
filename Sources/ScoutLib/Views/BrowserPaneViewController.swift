@@ -143,7 +143,7 @@ final class BrowserPaneViewController: NSViewController {
 
     private func configureTabBar() {
         tabBar.orientation = .horizontal
-        tabBar.distribution = .gravityAreas
+        tabBar.distribution = .fill
         tabBar.spacing = 1
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         tabBar.wantsLayer = true
@@ -270,6 +270,10 @@ final class BrowserPaneViewController: NSViewController {
     /// Navigate the current tab to the given URL.
     func navigateTo(url: URL) {
         guard !tabs.isEmpty else { return }
+
+        // Skip redundant navigation to the same URL
+        if tabs[activeTabIndex].url == url { return }
+
         activeTabFilterLabels = []
 
         var tab = tabs[activeTabIndex]
@@ -565,6 +569,13 @@ final class BrowserPaneViewController: NSViewController {
             tabBar.addArrangedSubview(button)
         }
 
+        // Flexible spacer absorbs extra width so tabs pack to the left
+        let spacer = NSView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        tabBar.addArrangedSubview(spacer)
+
         // Add "+" button at the end
         let addButton = NSButton(
             image: NSImage(systemSymbolName: "plus", accessibilityDescription: "New Tab")!,
@@ -577,6 +588,7 @@ final class BrowserPaneViewController: NSViewController {
 
         let addContainer = NSView()
         addContainer.translatesAutoresizingMaskIntoConstraints = false
+        addContainer.setContentHuggingPriority(.required, for: .horizontal)
         addContainer.addSubview(addButton)
 
         NSLayoutConstraint.activate([
@@ -594,6 +606,8 @@ final class BrowserPaneViewController: NSViewController {
     private func makeTabButton(title: String, url: URL, index: Int, isSelected: Bool) -> NSView {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
+        container.setContentHuggingPriority(.required, for: .horizontal)
+        container.setContentCompressionResistancePriority(.required, for: .horizontal)
         container.wantsLayer = true
         container.layer?.backgroundColor = isSelected
             ? NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
@@ -611,11 +625,17 @@ final class BrowserPaneViewController: NSViewController {
 
         // Folder/volume icon
         let iconView = NSImageView()
-        iconView.image = NSWorkspace.shared.icon(forFile: url.path)
-        iconView.image?.size = NSSize(width: 14, height: 14)
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        icon.size = NSSize(width: 14, height: 14)
+        iconView.image = icon
+        iconView.imageScaling = .scaleProportionallyDown
         iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconView.widthAnchor.constraint(equalToConstant: 14).isActive = true
-        iconView.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+        iconView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        NSLayoutConstraint.activate([
+            iconView.widthAnchor.constraint(equalToConstant: 14),
+            iconView.heightAnchor.constraint(equalToConstant: 14),
+        ])
         contentStack.addArrangedSubview(iconView)
 
         // Title button (clickable)

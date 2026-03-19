@@ -9,6 +9,7 @@ final class SettingsWindowController: NSWindowController {
     convenience init() {
         let tabViewController = NSTabViewController()
         tabViewController.tabStyle = .toolbar
+        tabViewController.title = "Settings"
 
         // General tab
         let generalTab = NSTabViewItem(viewController: SettingsGeneralViewController())
@@ -43,7 +44,6 @@ private final class SettingsGeneralViewController: NSViewController {
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 300))
-        view.translatesAutoresizingMaskIntoConstraints = false
 
         configureViewModePopup()
         configureHiddenFilesCheckbox()
@@ -181,7 +181,6 @@ private final class SettingsGeneralViewController: NSViewController {
 private final class SettingsAboutViewController: NSViewController {
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 300))
-        view.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = NSStackView()
         stack.orientation = .vertical
