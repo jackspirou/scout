@@ -254,6 +254,38 @@ actor FileSystemService: FileSystemServiceProtocol {
         FileManager.default.fileExists(atPath: url.path)
     }
 
+    // MARK: - Batch Tag
+
+    /// Applies tag changes to multiple files according to a pattern.
+    func batchSetTags(urls: [URL], pattern: BatchTagPattern) throws {
+        for url in urls {
+            let existing = (try? url.resourceValues(forKeys: [.tagNamesKey]))?.tagNames ?? []
+
+            let newTags: [String]
+            switch pattern {
+            case let .add(tags):
+                var merged = existing
+                for tag in tags where !merged.contains(tag) {
+                    merged.append(tag)
+                }
+                newTags = merged
+            case let .remove(tags):
+                newTags = existing.filter { !tags.contains($0) }
+            case let .set(tags):
+                newTags = tags
+            }
+
+            // Write tags via the com.apple.metadata:_kMDItemUserTags extended attribute
+            // (binary plist). URLResourceValues.tagNames setter requires macOS 26+.
+            let plistData = try PropertyListSerialization.data(
+                fromPropertyList: newTags,
+                format: .binary,
+                options: 0
+            )
+            try (url as NSURL).setResourceValue(plistData, forKey: .tagNamesKey)
+        }
+    }
+
     // MARK: - Batch Rename
 
     /// Renames multiple files according to a pattern.
