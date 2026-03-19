@@ -340,6 +340,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             .item("Downloads", action: #selector(handleGoDownloads(_:))),
             .separator,
             .item("Connect to Server...", action: #selector(handleConnectToServer(_:)), key: "k"),
+            .separator,
+            .item("Open Terminal Here", action: #selector(handleOpenTerminal(_:)), key: "`", modifiers: [.control]),
         ])
 
         // Add a dynamic "Recent Folders" submenu
@@ -530,6 +532,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func settingsWindowWillClose(_ notification: Notification) {
         settingsWindowController = nil
+    }
+
+    @objc private func handleOpenTerminal(_ sender: Any?) {
+        guard let windowController = NSApp.keyWindow?.windowController as? MainWindowController else { return }
+        let url = windowController.currentURL()
+        TerminalLaunchService.openTerminal(at: url)
     }
 
     @objc private func handleConnectToServer(_ sender: Any?) {
