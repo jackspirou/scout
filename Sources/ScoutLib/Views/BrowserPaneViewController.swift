@@ -130,6 +130,9 @@ final class BrowserPaneViewController: NSViewController {
         pathBarView.delegate = self
         pathBarView.setIconStyle(iconStyle)
         fileListViewController.delegate = self
+        fileListViewController.onNavigateToDirectory = { [weak self] url in
+            self?.navigateTo(url: url)
+        }
         directoryMonitor.delegate = self
     }
 
