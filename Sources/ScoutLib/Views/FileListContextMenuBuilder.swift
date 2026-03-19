@@ -22,6 +22,7 @@ enum FileListContextMenuBuilder {
     private static let showInFinderSelector = NSSelectorFromString("contextShowInFinder:")
     private static let compressSelector = NSSelectorFromString("contextCompress:")
     private static let openTerminalSelector = NSSelectorFromString("contextOpenTerminal:")
+    private static let batchTagSelector = NSSelectorFromString("contextBatchTag:")
     private static let newFolderSelector = NSSelectorFromString("contextNewFolder:")
 
     // MARK: - Public API
@@ -127,6 +128,11 @@ enum FileListContextMenuBuilder {
         let compressItem = NSMenuItem(title: "Compress", action: compressSelector, keyEquivalent: "")
         compressItem.target = target
         menu.addItem(compressItem)
+
+        // Tag Selected Items
+        let batchTagItem = NSMenuItem(title: "Tag Selected Items...", action: batchTagSelector, keyEquivalent: "")
+        batchTagItem.target = target
+        menu.addItem(batchTagItem)
 
         // Share submenu (populated lazily when opened)
         let shareItem = NSMenuItem(title: "Share", action: nil, keyEquivalent: "")

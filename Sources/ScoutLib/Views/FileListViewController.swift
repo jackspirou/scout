@@ -883,6 +883,18 @@ final class FileListViewController: NSViewController {
         TerminalLaunchService.openTerminal(at: directory)
     }
 
+    @objc func contextBatchTag(_ sender: NSMenuItem) {
+        let items = selectedItems()
+        guard !items.isEmpty else { return }
+        let controller = BatchTagWindowController(fileURLs: items.map(\.url))
+        controller.onComplete = { [weak self] in
+            guard let self, let url = self.currentDirectoryURL else { return }
+            self.loadDirectory(at: url)
+        }
+        controller.showWindow(nil)
+        objc_setAssociatedObject(self, "batchTagController", controller, .OBJC_ASSOCIATION_RETAIN)
+    }
+
     // MARK: - Header Context Menu (Show/Hide Columns)
 
     /// All columns available for show/hide, mapped from SortField to column identifier and display title.
