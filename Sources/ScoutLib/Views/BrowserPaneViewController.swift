@@ -27,6 +27,7 @@ final class BrowserPaneViewController: NSViewController {
     private var showHiddenFiles: Bool
     private(set) var currentViewMode: ViewMode = .list
     private var suppressSelectionClear: Bool = false
+    private var activeTabFilterLabels: [String] = []
     private let tabBar = NSStackView()
     private let pathBarView = PathBarView()
     private let fileListViewController: FileListViewController
@@ -234,7 +235,7 @@ final class BrowserPaneViewController: NSViewController {
     /// Displays search results (e.g. files matching a tag) in the file list view.
     /// Called once for the first batch and again for each subsequent batch.
     /// Only performs view-mode switch, tab rebuild, and monitor stop on the first call.
-    func displaySearchResults(_ items: [FileItem], title: String) {
+    func displaySearchResults(_ items: [FileItem], title: String, filterLabels: [String] = []) {
         guard !tabs.isEmpty else { return }
 
         let isFirstBatch = (currentViewMode != .list || tabs[activeTabIndex].title != title)
@@ -252,6 +253,7 @@ final class BrowserPaneViewController: NSViewController {
             var tab = tabs[activeTabIndex]
             tab.title = title
             tabs[activeTabIndex] = tab
+            activeTabFilterLabels = filterLabels
             rebuildTabBar()
 
             // Clear the path bar since search results don't correspond to a single directory
@@ -268,6 +270,7 @@ final class BrowserPaneViewController: NSViewController {
     /// Navigate the current tab to the given URL.
     func navigateTo(url: URL) {
         guard !tabs.isEmpty else { return }
+        activeTabFilterLabels = []
 
         var tab = tabs[activeTabIndex]
         tab.backStack.append(tab.url)
@@ -558,7 +561,7 @@ final class BrowserPaneViewController: NSViewController {
         tabBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         for (index, tab) in tabs.enumerated() {
-            let button = makeTabButton(title: tab.title, index: index, isSelected: index == activeTabIndex)
+            let button = makeTabButton(title: tab.title, url: tab.url, index: index, isSelected: index == activeTabIndex)
             tabBar.addArrangedSubview(button)
         }
 
@@ -588,7 +591,7 @@ final class BrowserPaneViewController: NSViewController {
         tabBar.addArrangedSubview(addContainer)
     }
 
-    private func makeTabButton(title: String, index: Int, isSelected: Bool) -> NSView {
+    private func makeTabButton(title: String, url: URL, index: Int, isSelected: Bool) -> NSView {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
@@ -597,12 +600,57 @@ final class BrowserPaneViewController: NSViewController {
             : NSColor.clear.cgColor
         container.layer?.cornerRadius = 4
 
+        // Build tab content: icon + title label + optional filter pills
+        let filterLabels = (index == activeTabIndex) ? activeTabFilterLabels : []
+
+        let contentStack = NSStackView()
+        contentStack.orientation = .horizontal
+        contentStack.spacing = 4
+        contentStack.alignment = .centerY
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        // Folder/volume icon
+        let iconView = NSImageView()
+        iconView.image = NSWorkspace.shared.icon(forFile: url.path)
+        iconView.image?.size = NSSize(width: 14, height: 14)
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.widthAnchor.constraint(equalToConstant: 14).isActive = true
+        iconView.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        contentStack.addArrangedSubview(iconView)
+
+        // Title button (clickable)
         let button = NSButton(title: title, target: self, action: #selector(tabClicked(_:)))
         button.tag = index
         button.isBordered = false
         button.font = NSFont.systemFont(ofSize: 11, weight: isSelected ? .semibold : .regular)
         button.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(button)
+        contentStack.addArrangedSubview(button)
+
+        // Filter pills
+        for label in filterLabels {
+            let pill = NSView()
+            pill.wantsLayer = true
+            pill.layer?.cornerRadius = 7
+            pill.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
+            pill.translatesAutoresizingMaskIntoConstraints = false
+
+            let pillLabel = NSTextField(labelWithString: label)
+            pillLabel.font = NSFont.systemFont(ofSize: 9, weight: .medium)
+            pillLabel.textColor = .controlAccentColor
+            pillLabel.translatesAutoresizingMaskIntoConstraints = false
+            pill.addSubview(pillLabel)
+
+            NSLayoutConstraint.activate([
+                pillLabel.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 6),
+                pillLabel.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -6),
+                pillLabel.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
+                pill.heightAnchor.constraint(equalToConstant: 16),
+            ])
+
+            contentStack.addArrangedSubview(pill)
+        }
+
+        container.addSubview(contentStack)
 
         let closeButton = NSButton(
             image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Tab")!,
@@ -616,10 +664,10 @@ final class BrowserPaneViewController: NSViewController {
         container.addSubview(closeButton)
 
         NSLayoutConstraint.activate([
-            button.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            button.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            contentStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
 
-            closeButton.leadingAnchor.constraint(equalTo: button.trailingAnchor, constant: 4),
+            closeButton.leadingAnchor.constraint(equalTo: contentStack.trailingAnchor, constant: 4),
             closeButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -4),
             closeButton.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             closeButton.widthAnchor.constraint(equalToConstant: 16),

@@ -84,6 +84,8 @@ final class MainWindowController: NSWindowController {
     private var searchScopeBar: NSView?
     private var searchScopeSegment: NSSegmentedControl?
     private var searchScopeBarBottomConstraint: NSLayoutConstraint?
+    private var activeFilters: [SearchFilter] = []
+    private var activeDisplayTokens: [SearchFilterToken.DisplayToken] = []
 
     /// The clipboard manager used by the browser container.
     var clipboardManager: ClipboardManager {
@@ -365,10 +367,23 @@ final class MainWindowController: NSWindowController {
             return
         }
 
-        // Save the current directory so we can restore when search is cleared
-        if !isSearchActive {
-            preSearchURL = browserContainer.activePaneController().currentURL()
+        // Parse filter tokens (kind:pdf, size:>10mb, etc.) from the query
+        let parsed = SearchFilterToken.parse(query)
+        activeFilters = parsed.filters
+        activeDisplayTokens = parsed.displayTokens
+        let textQuery = parsed.textQuery
+        updateTokenBar()
+
+        // If we extracted all tokens and no text remains, still need something to search
+        let effectiveQuery = textQuery.isEmpty && !activeFilters.isEmpty ? "*" : textQuery
+        guard !effectiveQuery.isEmpty else {
+            exitSearch()
+            return
         }
+
+        // Always capture the current directory for scope and restore.
+        // currentURL() returns the tab's URL which persists through searches.
+        preSearchURL = browserContainer.activePaneController().currentURL()
         isSearchActive = true
         showScopeBar(true)
 
@@ -392,6 +407,21 @@ final class MainWindowController: NSWindowController {
 
         browserContainer.activePaneController().setSearchInProgress(true)
 
+        // Build display title: "FolderName Search: text" with filter labels
+        let folderName = browserContainer.activePaneController().currentURL().lastPathComponent
+        let filterLabels = activeDisplayTokens.map(\.label)
+        var searchSuffix = ""
+        if !textQuery.isEmpty {
+            searchSuffix = " \(textQuery)"
+        }
+        let displayTitle = "\(folderName) Search:\(searchSuffix)"
+
+        // Immediately clear old results so the user doesn't see stale data
+        browserContainer.activePaneController().displaySearchResults(
+            [], title: displayTitle, filterLabels: filterLabels
+        )
+
+        let filters = activeFilters
         searchTask = Task { [weak self] in
             guard let self else { return }
 
@@ -410,7 +440,7 @@ final class MainWindowController: NSWindowController {
             // Results from all backends are deduplicated by URL.
             var seenURLs = Set<URL>()
             var allItems: [FileItem] = []
-            let title = "Search: \(query)"
+            let title = displayTitle
 
             let folderURL: URL?
             switch scope {
@@ -422,13 +452,23 @@ final class MainWindowController: NSWindowController {
 
             // Phase 1: Folder-scoped — FileManager.enumerator for complete directory results.
             if let folderURL {
-                let fsItems = await self.filesystemSearch(query: query, in: folderURL)
-                if !Task.isCancelled && !fsItems.isEmpty {
+                var fsItems: [FileItem]
+                if textQuery.isEmpty && !filters.isEmpty {
+                    // Filter-only search: scan all files, apply filters (no glob matching)
+                    fsItems = await self.filesystemSearchAll(in: folderURL, filters: filters)
+                } else {
+                    fsItems = await self.filesystemSearch(query: effectiveQuery, in: folderURL)
+                    if !filters.isEmpty {
+                        fsItems = fsItems.filter { item in filters.allSatisfy { $0.matches(item) } }
+                    }
+                }
+                if !Task.isCancelled {
                     for item in fsItems {
                         if seenURLs.insert(item.url).inserted {
                             allItems.append(item)
                         }
                     }
+                    // Always display results (even if empty) so old listing is replaced
                     let snapshot = allItems
                     await MainActor.run {
                         self.browserContainer.activePaneController().displaySearchResults(
@@ -440,12 +480,16 @@ final class MainWindowController: NSWindowController {
 
             // Phase 2: Spotlight — runs for both scopes. Provides user-relevant results
             // from indexed volumes. For "This Mac", this is the primary search backend.
-            let stream = await self.searchService.search(query: query, scope: scope)
+            let stream = await self.searchService.search(
+                query: effectiveQuery, scope: scope, filters: filters
+            )
             for await batch in stream {
                 guard !Task.isCancelled else { return }
                 for item in batch {
                     if seenURLs.insert(item.url).inserted {
-                        allItems.append(item)
+                        if filters.isEmpty || filters.allSatisfy({ $0.matches(item) }) {
+                            allItems.append(item)
+                        }
                     }
                 }
                 let snapshot = allItems
@@ -462,13 +506,15 @@ final class MainWindowController: NSWindowController {
             // an indexed volume (handled by FileManager.enumerator above).
             if folderURL == nil {
                 let searchfsStream = await self.searchfsService.searchNonIndexedVolumes(
-                    query: query, maxResults: 10000
+                    query: effectiveQuery, maxResults: 10000
                 )
                 for await batch in searchfsStream {
                     guard !Task.isCancelled else { return }
                     for item in batch {
                         if seenURLs.insert(item.url).inserted {
-                            allItems.append(item)
+                            if filters.isEmpty || filters.allSatisfy({ $0.matches(item) }) {
+                                allItems.append(item)
+                            }
                         }
                     }
                     let snapshot = allItems
@@ -540,6 +586,35 @@ final class MainWindowController: NSWindowController {
         }.value
     }
 
+    /// Scans all files in a directory and returns only those matching the given filters.
+    /// Used for filter-only queries (e.g. `kind:pdf` with no text query) where glob matching
+    /// is not needed — we just need to iterate files and apply structured filters.
+    private func filesystemSearchAll(in directory: URL, filters: [SearchFilter]) async -> [FileItem] {
+        return await Task.detached {
+            var items: [FileItem] = []
+            let fm = FileManager.default
+            guard let enumerator = fm.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.contentTypeKey, .fileSizeKey, .contentModificationDateKey, .tagNamesKey, .isDirectoryKey],
+                options: [.skipsPackageDescendants]
+            ) else { return items }
+
+            while let obj = enumerator.nextObject() {
+                if Task.isCancelled { break }
+                guard let url = obj as? URL,
+                      let item = FileItem.create(from: url, iconStyle: .system)
+                else { continue }
+
+                if filters.allSatisfy({ $0.matches(item) }) {
+                    items.append(item)
+                }
+                // Cap at 1000 matching results
+                if items.count >= 1000 { break }
+            }
+            return items
+        }.value
+    }
+
     /// Exits search mode and restores the original directory.
     private func exitSearch() {
         searchTask?.cancel()
@@ -553,9 +628,14 @@ final class MainWindowController: NSWindowController {
         }
         isSearchActive = false
         preSearchURL = nil
+        activeFilters = []
+        activeDisplayTokens = []
         browserContainer.setFilterQuery("")
         showScopeBar(false)
     }
+
+    /// No-op — tokens are now shown in the tab title, not a separate bar.
+    private func updateTokenBar() {}
 
     /// Shows or hides the search scope bar.
     private func showScopeBar(_ show: Bool) {
@@ -585,7 +665,7 @@ final class MainWindowController: NSWindowController {
             target: self,
             action: #selector(searchScopeChanged(_:))
         )
-        segment.selectedSegment = 1
+        segment.selectedSegment = 0
         segment.translatesAutoresizingMaskIntoConstraints = false
         segment.controlSize = .small
         segment.segmentStyle = .capsule
@@ -1225,11 +1305,10 @@ extension MainWindowController: NSSearchFieldDelegate {
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
+        let movement = obj.userInfo?["NSTextMovement"] as? Int
+        let field = obj.object as? NSSearchField
         // Check if editing ended because the user pressed Enter
-        guard let movement = obj.userInfo?["NSTextMovement"] as? Int,
-              movement == NSReturnTextMovement,
-              let field = obj.object as? NSSearchField
-        else { return }
+        guard let movement, movement == NSReturnTextMovement, let field else { return }
 
         let query = field.stringValue
         guard !query.isEmpty else { return }
