@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-beta.11] - 2026-03-19
+
+### Added
+
+- Group search results by parent directory with collapse/expand
+- Group search results by parent directory with collapse/expand
+- Add tab drag-to-reorder within pane tab bar
+- Add tab drag-to-reorder within pane tab bar
+- Add batch tagging for multiple file selection
+- Add batch tagging for multiple file selection
+- Add search filter tokens with tab pills and path bar cleanup
+- Add search filter tokens (kind:pdf, size:>10mb, modified:today, tag:work)
+- Add "Open Terminal Here" with configurable terminal app
+- Add "Open Terminal Here" with configurable terminal app
+
+### Changed
+
+- Simplify search UX and fix UI polish issues
+- **ci**: Use canonical git-cliff commit-back pattern
+
+### Documentation
+
+- Update CHANGELOG.md for v0.1.0-beta.10
+
+### Fixed
+
+- **build**: Silence xcodebuild destination and scheme warnings
+- **ci**: Scope git checkout to known dirty files only
+
 ## [0.1.0-beta.10] - 2026-03-17
 
 ### Added
