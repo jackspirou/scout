@@ -1,5 +1,11 @@
 import Cocoa
 
+// MARK: - Tab Drag Pasteboard Type
+
+private extension NSPasteboard.PasteboardType {
+    static let scoutTabReorder = NSPasteboard.PasteboardType("com.scout.tab-reorder")
+}
+
 // MARK: - BrowserPaneDelegate
 
 protocol BrowserPaneDelegate: AnyObject {
@@ -27,7 +33,9 @@ final class BrowserPaneViewController: NSViewController {
     private var showHiddenFiles: Bool
     private(set) var currentViewMode: ViewMode = .list
     private var suppressSelectionClear: Bool = false
-    private let tabBar = NSStackView()
+    private let tabBar = TabBarStackView()
+    private var draggedTabIndex: Int?
+    private var dropIndicatorView: NSView?
     private let pathBarView = PathBarView()
     private let fileListViewController: FileListViewController
     private let statusBar = NSTextField(labelWithString: "0 items")
@@ -147,6 +155,8 @@ final class BrowserPaneViewController: NSViewController {
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         tabBar.wantsLayer = true
         view.addSubview(tabBar)
+        tabBar.paneController = self
+        tabBar.registerForDraggedTypes([.scoutTabReorder])
     }
 
     private func configurePathBar() {
@@ -589,7 +599,7 @@ final class BrowserPaneViewController: NSViewController {
     }
 
     private func makeTabButton(title: String, index: Int, isSelected: Bool) -> NSView {
-        let container = NSView()
+        let container = DraggableTabContainerView(tabIndex: index, paneController: self)
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
         container.layer?.backgroundColor = isSelected
@@ -643,6 +653,124 @@ final class BrowserPaneViewController: NSViewController {
         pendingScrollRestore = tabs[activeTabIndex].scrollOffset
         rebuildTabBar()
         reloadCurrentTab()
+    }
+
+    // MARK: - Tab Drag & Drop
+
+    /// Called by DraggableTabContainerView when a drag begins.
+    fileprivate func beginTabDrag(at index: Int, event: NSEvent) {
+        guard tabs.count > 1 else { return }
+        draggedTabIndex = index
+
+        let pasteboardItem = NSPasteboardItem()
+        pasteboardItem.setString(String(index), forType: .scoutTabReorder)
+
+        let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
+
+        // Use the tab view as the drag image
+        let tabViews = tabBar.arrangedSubviews.filter { $0 is DraggableTabContainerView }
+        guard index < tabViews.count else { return }
+        let tabView = tabViews[index]
+
+        let image = NSImage(size: tabView.bounds.size)
+        image.lockFocus()
+        tabView.layer?.render(in: NSGraphicsContext.current!.cgContext)
+        image.unlockFocus()
+
+        draggingItem.setDraggingFrame(tabView.bounds, contents: image)
+        tabView.beginDraggingSession(with: [draggingItem], event: event, source: self)
+    }
+
+    /// Calculates the insertion index from a drag point in tab bar coordinates.
+    fileprivate func insertionIndex(for point: NSPoint) -> Int {
+        let tabViews = tabBar.arrangedSubviews.filter { $0 is DraggableTabContainerView }
+        for (i, view) in tabViews.enumerated() {
+            let mid = view.frame.midX
+            if point.x < mid {
+                return i
+            }
+        }
+        return tabViews.count
+    }
+
+    /// Shows or moves the drop indicator at the given insertion index.
+    fileprivate func showDropIndicator(at insertionIdx: Int) {
+        if dropIndicatorView == nil {
+            let indicator = NSView()
+            indicator.wantsLayer = true
+            indicator.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+            indicator.translatesAutoresizingMaskIntoConstraints = false
+            tabBar.addSubview(indicator)
+            indicator.heightAnchor.constraint(equalToConstant: Layout.tabBarHeight - 8).isActive = true
+            indicator.widthAnchor.constraint(equalToConstant: 2).isActive = true
+            indicator.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor).isActive = true
+            dropIndicatorView = indicator
+        }
+
+        guard let indicator = dropIndicatorView else { return }
+
+        let tabViews = tabBar.arrangedSubviews.filter { $0 is DraggableTabContainerView }
+        let xPos: CGFloat
+        if insertionIdx < tabViews.count {
+            xPos = tabViews[insertionIdx].frame.minX - 1
+        } else if let last = tabViews.last {
+            xPos = last.frame.maxX + 1
+        } else {
+            xPos = 0
+        }
+
+        // Remove old leading constraint and add new one
+        indicator.constraints.filter { $0.firstAttribute == .leading }.forEach { $0.isActive = false }
+        for constraint in tabBar.constraints where constraint.firstItem === indicator && constraint.firstAttribute == .leading {
+            constraint.isActive = false
+        }
+        indicator.frame.origin.x = xPos
+        indicator.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: xPos).isActive = true
+    }
+
+    fileprivate func hideDropIndicator() {
+        dropIndicatorView?.removeFromSuperview()
+        dropIndicatorView = nil
+    }
+
+    /// Called by TabBarDropView when drag position updates.
+    fileprivate func handleTabDragUpdated(at point: NSPoint) {
+        let idx = insertionIndex(for: point)
+        showDropIndicator(at: idx)
+    }
+
+    /// Called by TabBarDropView when a drop occurs.
+    fileprivate func handleTabDrop(from sourceIndex: Int, at point: NSPoint) {
+        let targetIndex = insertionIndex(for: point)
+        performTabReorder(from: sourceIndex, to: targetIndex)
+    }
+
+    /// Performs the tab reorder when a drop occurs.
+    fileprivate func performTabReorder(from sourceIndex: Int, to insertionIdx: Int) {
+        guard sourceIndex != insertionIdx, sourceIndex != insertionIdx - 1 else {
+            hideDropIndicator()
+            draggedTabIndex = nil
+            return
+        }
+
+        saveActiveTabState()
+
+        let tab = tabs.remove(at: sourceIndex)
+        let adjustedIndex = insertionIdx > sourceIndex ? insertionIdx - 1 : insertionIdx
+        tabs.insert(tab, at: adjustedIndex)
+
+        // Update active tab index to follow the active tab
+        if activeTabIndex == sourceIndex {
+            activeTabIndex = adjustedIndex
+        } else if sourceIndex < activeTabIndex, adjustedIndex >= activeTabIndex {
+            activeTabIndex -= 1
+        } else if sourceIndex > activeTabIndex, adjustedIndex <= activeTabIndex {
+            activeTabIndex += 1
+        }
+
+        hideDropIndicator()
+        draggedTabIndex = nil
+        rebuildTabBar()
     }
 
     @objc private func closeTabClicked(_ sender: NSButton) {
@@ -870,6 +998,105 @@ extension BrowserPaneViewController: DirectoryMonitorDelegate {
         } else {
             reloadCurrentTab()
         }
+    }
+}
+
+// MARK: - NSDraggingSource
+
+extension BrowserPaneViewController: NSDraggingSource {
+    func draggingSession(
+        _ session: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        context == .withinApplication ? .move : []
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        hideDropIndicator()
+        draggedTabIndex = nil
+    }
+}
+
+// MARK: - TabBarStackView
+
+/// An NSStackView subclass that acts as a drag destination for tab reordering.
+private final class TabBarStackView: NSStackView {
+    weak var paneController: BrowserPaneViewController?
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard sender.draggingPasteboard.types?.contains(.scoutTabReorder) == true else { return [] }
+        return .move
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard sender.draggingPasteboard.types?.contains(.scoutTabReorder) == true,
+              let controller = paneController
+        else { return [] }
+        let point = convert(sender.draggingLocation, from: nil)
+        controller.handleTabDragUpdated(at: point)
+        return .move
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        paneController?.hideDropIndicator()
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let indexStr = sender.draggingPasteboard.string(forType: .scoutTabReorder),
+              let sourceIndex = Int(indexStr),
+              let controller = paneController
+        else { return false }
+
+        let point = convert(sender.draggingLocation, from: nil)
+        controller.handleTabDrop(from: sourceIndex, at: point)
+        return true
+    }
+}
+
+// MARK: - DraggableTabContainerView
+
+/// A tab container view that initiates drag sessions for tab reordering.
+private final class DraggableTabContainerView: NSView {
+    private let tabIndex: Int
+    private weak var paneController: BrowserPaneViewController?
+    private var dragOrigin: NSPoint?
+
+    init(tabIndex: Int, paneController: BrowserPaneViewController) {
+        self.tabIndex = tabIndex
+        self.paneController = paneController
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragOrigin = convert(event.locationInWindow, from: nil)
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let origin = dragOrigin else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        let current = convert(event.locationInWindow, from: nil)
+        let dx = abs(current.x - origin.x)
+        let dy = abs(current.y - origin.y)
+
+        // Minimum drag distance to distinguish from click
+        if dx > 3 || dy > 3 {
+            dragOrigin = nil
+            paneController?.beginTabDrag(at: tabIndex, event: event)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragOrigin = nil
+        super.mouseUp(with: event)
     }
 }
 
