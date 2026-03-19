@@ -21,6 +21,7 @@ enum FileListContextMenuBuilder {
     private static let quickLookSelector = NSSelectorFromString("contextQuickLook:")
     private static let showInFinderSelector = NSSelectorFromString("contextShowInFinder:")
     private static let compressSelector = NSSelectorFromString("contextCompress:")
+    private static let openTerminalSelector = NSSelectorFromString("contextOpenTerminal:")
     private static let newFolderSelector = NSSelectorFromString("contextNewFolder:")
 
     // MARK: - Public API
@@ -115,6 +116,11 @@ enum FileListContextMenuBuilder {
         showInFinderItem.target = target
         menu.addItem(showInFinderItem)
 
+        // Open Terminal Here
+        let openTerminalItem = NSMenuItem(title: "Open Terminal Here", action: openTerminalSelector, keyEquivalent: "")
+        openTerminalItem.target = target
+        menu.addItem(openTerminalItem)
+
         menu.addItem(NSMenuItem.separator())
 
         // Compress
@@ -156,6 +162,10 @@ enum FileListContextMenuBuilder {
         let showInFinderItem = NSMenuItem(title: "Show in Finder", action: showInFinderSelector, keyEquivalent: "")
         showInFinderItem.target = target
         menu.addItem(showInFinderItem)
+
+        let openTerminalItem = NSMenuItem(title: "Open Terminal Here", action: openTerminalSelector, keyEquivalent: "")
+        openTerminalItem.target = target
+        menu.addItem(openTerminalItem)
 
         return menu
     }

@@ -870,6 +870,19 @@ final class FileListViewController: NSViewController {
         newFolder(sender)
     }
 
+    @objc func contextOpenTerminal(_ sender: NSMenuItem) {
+        let items = selectedItems()
+        let directory: URL
+        if let firstFolder = items.first(where: { $0.isDirectory }) {
+            directory = firstFolder.url
+        } else if let currentDir = currentDirectoryURL {
+            directory = currentDir
+        } else {
+            return
+        }
+        TerminalLaunchService.openTerminal(at: directory)
+    }
+
     // MARK: - Header Context Menu (Show/Hide Columns)
 
     /// All columns available for show/hide, mapped from SortField to column identifier and display title.

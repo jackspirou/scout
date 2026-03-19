@@ -39,6 +39,7 @@ private final class SettingsGeneralViewController: NSViewController {
     private let viewModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let hiddenFilesCheckbox = NSButton(checkboxWithTitle: "Show hidden files", target: nil, action: nil)
     private let iconStylePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let terminalPopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 300))
@@ -47,6 +48,7 @@ private final class SettingsGeneralViewController: NSViewController {
         configureViewModePopup()
         configureHiddenFilesCheckbox()
         configureIconStylePopup()
+        configureTerminalPopup()
         layoutControls()
     }
 
@@ -90,16 +92,29 @@ private final class SettingsGeneralViewController: NSViewController {
         }
     }
 
+    private func configureTerminalPopup() {
+        let installed = TerminalLaunchService.installedTerminals()
+        terminalPopup.addItems(withTitles: installed.map(\.displayName))
+        terminalPopup.target = self
+        terminalPopup.action = #selector(terminalChanged(_:))
+
+        let current = TerminalLaunchService.preferredTerminal
+        terminalPopup.selectItem(withTitle: current.displayName)
+    }
+
     private func layoutControls() {
         let viewModeLabel = NSTextField(labelWithString: "Default view mode:")
         viewModeLabel.alignment = .right
         let iconStyleLabel = NSTextField(labelWithString: "Icon style:")
         iconStyleLabel.alignment = .right
+        let terminalLabel = NSTextField(labelWithString: "Default terminal:")
+        terminalLabel.alignment = .right
 
         let gridView = NSGridView(views: [
             [viewModeLabel, viewModePopup],
             [NSGridCell.emptyContentView, hiddenFilesCheckbox],
             [iconStyleLabel, iconStylePopup],
+            [terminalLabel, terminalPopup],
         ])
         gridView.translatesAutoresizingMaskIntoConstraints = false
         gridView.rowSpacing = 12
@@ -147,6 +162,15 @@ private final class SettingsGeneralViewController: NSViewController {
         // Notify the key window's MainWindowController
         if let windowController = NSApp.keyWindow?.windowController as? MainWindowController {
             windowController.setIconStyle(style)
+        }
+    }
+
+    @objc private func terminalChanged(_ sender: NSPopUpButton) {
+        let installed = TerminalLaunchService.installedTerminals()
+        if let index = sender.indexOfSelectedItem as Int?,
+           index >= 0, index < installed.count
+        {
+            TerminalLaunchService.preferredTerminal = installed[index]
         }
     }
 }
