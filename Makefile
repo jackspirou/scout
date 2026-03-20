@@ -52,17 +52,25 @@ app: xcodegen ## Build the .app bundle with xcodebuild
 		-derivedDataPath "$(BUILD_DIR)/DerivedData" \
 		ARCHS="arm64 x86_64" \
 		ONLY_ACTIVE_ARCH=NO \
-		CODE_SIGN_IDENTITY="$(CODESIGN_IDENTITY)" \
-		DEVELOPMENT_TEAM="$(TEAM_ID)" \
-		CODE_SIGN_STYLE=Manual \
-		ENABLE_HARDENED_RUNTIME=YES \
-		OTHER_CODE_SIGN_FLAGS="--options=runtime --timestamp" \
-		CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+		CODE_SIGN_IDENTITY="" \
+		CODE_SIGNING_REQUIRED=NO \
+		CODE_SIGNING_ALLOWED=NO \
 		-quiet \
 		build
 	@cp -R "$(BUILD_DIR)/DerivedData/Build/Products/Release/$(APP_NAME).app" "$(APP_BUNDLE)"
-	# Re-sign the entire bundle to ensure consistent team ID across all binaries
-	@codesign --force --deep --sign "$(CODESIGN_IDENTITY)" --options=runtime --timestamp --entitlements "$(ENTITLEMENTS)" "$(APP_BUNDLE)"
+	# Re-sign inside-out: frameworks first, then the app bundle
+	# For ad-hoc signing, skip --timestamp (requires Apple servers) and hardened runtime
+	@if [ "$(CODESIGN_IDENTITY)" = "-" ]; then \
+		for fw in "$(APP_BUNDLE)/Contents/Frameworks/"*.framework; do \
+			[ -d "$$fw" ] && codesign --force --sign - "$$fw"; \
+		done; \
+		codesign --force --sign - --entitlements "$(ENTITLEMENTS)" "$(APP_BUNDLE)"; \
+	else \
+		for fw in "$(APP_BUNDLE)/Contents/Frameworks/"*.framework; do \
+			[ -d "$$fw" ] && codesign --force --sign "$(CODESIGN_IDENTITY)" --options=runtime --timestamp "$$fw"; \
+		done; \
+		codesign --force --sign "$(CODESIGN_IDENTITY)" --options=runtime --timestamp --entitlements "$(ENTITLEMENTS)" "$(APP_BUNDLE)"; \
+	fi
 	@echo "==> $(APP_BUNDLE) is ready"
 
 # ------------------------------------------------------------------
