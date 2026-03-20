@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.swift$'; then swiftformat \"$CLAUDE_FILE_PATH\"; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
