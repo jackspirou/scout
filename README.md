@@ -33,6 +33,18 @@ browsing with session memory, and keyboard-first navigation.
 brew install --cask jackspirou/tap/scout
 ```
 
+To update to the latest version:
+
+```
+brew update && brew upgrade --cask jackspirou/tap/scout
+```
+
+To reinstall (useful if the app isn't launching correctly):
+
+```
+brew reinstall --cask jackspirou/tap/scout
+```
+
 ### Download
 
 Grab the latest `.dmg` or `.app.zip` from
