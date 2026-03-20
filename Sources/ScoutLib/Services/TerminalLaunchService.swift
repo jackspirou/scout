@@ -6,7 +6,7 @@ enum TerminalApp: String, CaseIterable {
     case terminal = "Terminal"
     case iterm2 = "iTerm"
     case warp = "Warp"
-    case kitty = "kitty"
+    case kitty
     case ghostty = "Ghostty"
     case alacritty = "Alacritty"
 

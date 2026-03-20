@@ -96,7 +96,7 @@ enum SearchFilterToken {
             if char == "\"" {
                 inQuotes.toggle()
                 current.append(char)
-            } else if char == " " && !inQuotes {
+            } else if char == " ", !inQuotes {
                 if !current.isEmpty {
                     tokens.append(current)
                     current = ""

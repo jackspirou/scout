@@ -578,7 +578,12 @@ final class BrowserPaneViewController: NSViewController {
         tabBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         for (index, tab) in tabs.enumerated() {
-            let button = makeTabButton(title: tab.title, url: tab.url, index: index, isSelected: index == activeTabIndex)
+            let button = makeTabButton(
+                title: tab.title,
+                url: tab.url,
+                index: index,
+                isSelected: index == activeTabIndex
+            )
             tabBar.addArrangedSubview(button)
         }
 
@@ -792,7 +797,9 @@ final class BrowserPaneViewController: NSViewController {
 
         // Remove old leading constraint and add new one
         indicator.constraints.filter { $0.firstAttribute == .leading }.forEach { $0.isActive = false }
-        for constraint in tabBar.constraints where constraint.firstItem === indicator && constraint.firstAttribute == .leading {
+        for constraint in tabBar.constraints
+            where constraint.firstItem === indicator && constraint.firstAttribute == .leading
+        {
             constraint.isActive = false
         }
         indicator.frame.origin.x = xPos

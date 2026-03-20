@@ -604,7 +604,13 @@ final class MainWindowController: NSWindowController {
         return await Task.detached {
             var items: [FileItem] = []
             let fm = FileManager.default
-            let resourceKeys: [URLResourceKey] = [.contentTypeKey, .fileSizeKey, .contentModificationDateKey, .tagNamesKey, .isDirectoryKey]
+            let resourceKeys: [URLResourceKey] = [
+                .contentTypeKey,
+                .fileSizeKey,
+                .contentModificationDateKey,
+                .tagNamesKey,
+                .isDirectoryKey,
+            ]
 
             // Pass 1: Immediate children first
             if let contents = try? fm.contentsOfDirectory(
