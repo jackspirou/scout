@@ -651,7 +651,7 @@ final class BrowserPaneViewController: NSViewController {
         ])
         contentStack.addArrangedSubview(iconView)
 
-        // Title button (clickable)
+        // Title button (clickable for tab switching)
         let button = NSButton(title: title, target: self, action: #selector(tabClicked(_:)))
         button.tag = index
         button.isBordered = false
@@ -1126,16 +1126,19 @@ private final class TabBarStackView: NSStackView {
 
 // MARK: - DraggableTabContainerView
 
-/// A tab container view that initiates drag sessions for tab reordering.
+/// A tab container view that supports drag-to-reorder via gesture recognizer.
 private final class DraggableTabContainerView: NSView {
-    private let tabIndex: Int
+    let tabIndex: Int
     private weak var paneController: BrowserPaneViewController?
-    private var dragOrigin: NSPoint?
 
     init(tabIndex: Int, paneController: BrowserPaneViewController) {
         self.tabIndex = tabIndex
         self.paneController = paneController
         super.init(frame: .zero)
+
+        // Pan gesture for drag-to-reorder (doesn't block button clicks)
+        let pan = NSPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        addGestureRecognizer(pan)
     }
 
     @available(*, unavailable)
@@ -1143,31 +1146,11 @@ private final class DraggableTabContainerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func mouseDown(with event: NSEvent) {
-        dragOrigin = convert(event.locationInWindow, from: nil)
-        super.mouseDown(with: event)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let origin = dragOrigin else {
-            super.mouseDragged(with: event)
-            return
-        }
-
-        let current = convert(event.locationInWindow, from: nil)
-        let dx = abs(current.x - origin.x)
-        let dy = abs(current.y - origin.y)
-
-        // Minimum drag distance to distinguish from click
-        if dx > 3 || dy > 3 {
-            dragOrigin = nil
-            paneController?.beginTabDrag(at: tabIndex, event: event)
-        }
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        dragOrigin = nil
-        super.mouseUp(with: event)
+    @objc private func handlePan(_ gesture: NSPanGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        // Convert the gesture event into a drag session
+        guard let event = NSApp.currentEvent else { return }
+        paneController?.beginTabDrag(at: tabIndex, event: event)
     }
 }
 
