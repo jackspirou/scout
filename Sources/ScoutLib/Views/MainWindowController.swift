@@ -49,7 +49,7 @@ final class MainWindowController: NSWindowController {
     /// double-toggling the container during session restore.
     private var suppressDualPaneDidChange: Bool = false
 
-    private(set) var showPreview: Bool = false {
+    private(set) var showPreview: Bool = true {
         didSet { previewDidChange() }
     }
 
@@ -70,6 +70,10 @@ final class MainWindowController: NSWindowController {
     private var searchField: NSSearchField?
     private var viewModeSegmentedControl: NSSegmentedControl?
     private var searchDebounceTimer: Timer?
+
+    // Full Disk Access gate
+    private lazy var fullDiskAccessView = FullDiskAccessView()
+    private var fdaCheckTimer: Timer?
 
     // Search state
     private let searchService = SearchService()
@@ -273,12 +277,47 @@ final class MainWindowController: NSWindowController {
 
         window?.contentViewController = contentController
 
-        // Collapse preview pane by pushing divider to the far right.
+        // Position the preview pane divider so the preview is visible.
         // Defer so the split view has its final layout size.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.splitView.setPosition(self.splitView.bounds.width, ofDividerAt: 0)
+            self.splitView.setPosition(self.splitView.bounds.width - 250, ofDividerAt: 0)
         }
+
+        // Gate on Full Disk Access — show onboarding view if not granted
+        if !FullDiskAccessService.shared.hasFullDiskAccess() {
+            splitView.isHidden = true
+            sidebarView.isHidden = true
+
+            fullDiskAccessView.translatesAutoresizingMaskIntoConstraints = false
+            containerView.addSubview(fullDiskAccessView)
+
+            NSLayoutConstraint.activate([
+                fullDiskAccessView.topAnchor.constraint(equalTo: containerView.topAnchor),
+                fullDiskAccessView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+                fullDiskAccessView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+                fullDiskAccessView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            ])
+
+            fdaCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                self?.checkFullDiskAccess()
+            }
+        }
+    }
+
+    /// Called by the FDA polling timer when access is detected.
+    private func checkFullDiskAccess() {
+        guard FullDiskAccessService.shared.hasFullDiskAccess() else { return }
+        transitionToBrowser()
+    }
+
+    /// Removes the FDA onboarding view and reveals the normal browser UI.
+    private func transitionToBrowser() {
+        fdaCheckTimer?.invalidate()
+        fdaCheckTimer = nil
+        fullDiskAccessView.removeFromSuperview()
+        splitView.isHidden = false
+        sidebarView.isHidden = false
     }
 
     // MARK: - Toolbar
