@@ -1,4 +1,11 @@
 {
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(make test:*)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {
