@@ -5,7 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0-beta.12] - 2026-03-20
+
+### Documentation
+
+- Add brew update and reinstall commands to README
+- Add canonical documentation and Claude Code project settings
+- Update CHANGELOG.md for v0.1.0-beta.11
+
+### Fixed
+
+- **scoutdrop**: Add Bonjour plist entries for local network discovery
+- **build**: Sign app bundle inside-out to fix Team ID mismatch crash
+- Tab drag-to-reorder using NSPanGestureRecognizer
+
+### Miscellaneous
+
+- Move Claude Code permissions from local to project settings
+
+### Styling
+
+- Fix swiftformat lint violations
+
+## [0.1.0-beta.11] - 2026-03-19
 
 ### Added
 
