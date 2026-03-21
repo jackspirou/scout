@@ -5,8 +5,18 @@
 # Variables
 APP_NAME       := Scout
 BUILD_DIR      := build
-CODESIGN_IDENTITY ?= -
 TEAM_ID           ?=
+
+# Auto-detect signing identity: prefer Developer ID, then Apple Development,
+# otherwise fall back to ad-hoc (-). Override with CODESIGN_IDENTITY=...
+CODESIGN_IDENTITY ?= $(shell \
+	ID=$$(security find-identity -v -p codesigning 2>/dev/null | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/'); \
+	if [ -n "$$ID" ]; then echo "$$ID"; \
+	else \
+		ID=$$(security find-identity -v -p codesigning 2>/dev/null | grep "Apple Development" | head -1 | sed 's/.*"\(.*\)"/\1/'); \
+		if [ -n "$$ID" ]; then echo "$$ID"; \
+		else echo "-"; fi; \
+	fi)
 
 # Paths – source artifacts
 INFO_PLIST   := Sources/ScoutLib/Resources/Info.plist
@@ -58,8 +68,8 @@ app: xcodegen ## Build the .app bundle with xcodebuild
 		-quiet \
 		build
 	@cp -R "$(BUILD_DIR)/DerivedData/Build/Products/Release/$(APP_NAME).app" "$(APP_BUNDLE)"
-	# Re-sign inside-out: frameworks first, then the app bundle
-	# For ad-hoc signing, skip --timestamp (requires Apple servers) and hardened runtime
+	# Re-sign inside-out: frameworks first, then the app bundle.
+	# Ad-hoc (-) skips hardened runtime and timestamp; real identities use both.
 	@if [ "$(CODESIGN_IDENTITY)" = "-" ]; then \
 		for fw in "$(APP_BUNDLE)/Contents/Frameworks/"*.framework; do \
 			[ -d "$$fw" ] && codesign --force --sign - "$$fw"; \
